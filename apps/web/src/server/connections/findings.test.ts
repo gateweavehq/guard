@@ -127,6 +127,29 @@ describe("dependencyFindings", () => {
 		expect(result.partial).toBe(false);
 	});
 
+	// A later scan that can't read the lockfile keeps its findings open by that ending.
+	it("ends the subject with the whole lockfile path, however many versions are installed", async () => {
+		const versions = Array.from({ length: 200 }, (_, n) => ({
+			version: `4.17.${n}`,
+			fixed: "4.17.300",
+		}));
+		const path = "packages/a-rather-long-workspace-name/pnpm-lock.yaml";
+		const result = await dependencyFindings(
+			scan([
+				{
+					path,
+					format: "pnpm",
+					packages: 200,
+					vulnerable: [{ ecosystem: "npm", name: "lodash", advisory, versions }],
+				},
+			]),
+		);
+		const subject = result.findings[0]?.subject ?? "";
+		expect(subject.endsWith(` in ${path}`)).toBe(true);
+		expect(subject.startsWith("lodash@4.17.0, 4.17.1")).toBe(true);
+		expect(subject).toContain("…");
+	});
+
 	it("keeps the same fingerprint when the installed version moves but is still affected", async () => {
 		const at = (version: string) =>
 			dependencyFindings(

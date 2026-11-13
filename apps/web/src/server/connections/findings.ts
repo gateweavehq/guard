@@ -114,7 +114,9 @@ export async function dependencyFindings(scan: RepositoryScan): Promise<Reposito
 				source: "dependency",
 				severity: item.advisory.severity,
 				kind: item.advisory.id,
-				subject: cut(`${item.name}@${versions} in ${lockfile.path}`, MAX_SUBJECT),
+				// The lockfile's path stays whole at the end: a scan that can't read the lockfile goes by
+				// it to keep these findings open (`apply` in scan.ts).
+				subject: `${cut(`${item.name}@${versions}`, MAX_SUBJECT)} in ${lockfile.path}`,
 				title: cut(item.advisory.summary, MAX_TITLE),
 				url: item.advisory.url,
 				fixedVersion: highestFix(item.versions.map(({ fixed }) => fixed)),
