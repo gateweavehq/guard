@@ -164,6 +164,9 @@ describe("checking a token before keeping it", () => {
 		});
 		expect(result.status).toBe(400);
 		expect(result.body.error).toContain("Account › Security Center Insights › Read");
+		// Without the zone permission a token still works, and Cloudflare leaves out every zone's
+		// insights, so the words name it too.
+		expect(result.body.error).toContain("Zone › Security Center Insights › Read");
 		expect((await world.connections()).body.connections).toEqual([]);
 		// Nothing of a refused token is kept.
 		expect(await world.dump()).not.toContain(cloudflareToken(2));

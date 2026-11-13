@@ -45,7 +45,8 @@ or a repository only once an admin has connected it: see the next section.
 An owner or admin connects a **Cloudflare account** (its id and an account API token) or a **GitHub
 repository** (`owner/name` and a fine-grained token). Everyone in the workspace sees the connections
 and findings, without tokens. Guard only reads: it asks for the least access that reads (Account ›
-Security Center Insights › Read; Contents: Read-only on one repository), and nothing in it changes a
+Security Center Insights › Read, with Zone › Security Center Insights › Read on all the account's
+zones; Contents: Read-only on one repository), and nothing in it changes a
 setting, a rule or a file. The endpoints are `/api/connections/<workspace>` and
 `/api/findings/<workspace>` (`apps/web/src/server/connections/`), the pages are the Connections and
 Findings screens, and the schemas both agree on are in `apps/web/src/lib/connection-schemas.ts`.
@@ -57,7 +58,10 @@ Findings screens, and the schemas both agree on are in `apps/web/src/lib/connect
   characters without spaces, and a reason for dismissing is at most 200.
 - **A token is checked before it is kept.** Cloudflare: one `listInsights` call, where a refusal
   names the permission Account › Security Center Insights › Read (Guard cannot read a Cloudflare
-  token's own permissions, so a call that needs it is the only proof). GitHub: `getRepository`, then
+  token's own permissions, so a call that needs it is the only proof). The zone permission can't be
+  proved this way: a token without it is accepted, and Cloudflare then answers with the account's
+  own insights only, leaving out those of its zones (measured on 2026-11-14: 29 of an account's 111
+  active insights, and none of its 4 critical ones). So the form asks for both in words. GitHub: `getRepository`, then
   `branchHead`, which proves Contents read; the repository's id is kept, since a rename keeps it. A
   workspace has up to 50 connections (checked in the endpoint, held by the trigger
   `connection_is_capped` in `0004_connection_cap.sql`), each target once, and a repository once

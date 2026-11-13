@@ -4,7 +4,10 @@ import { apiBase, type FetchOptions, readJson, send } from "./http";
 
 // Cloudflare's Security Insights: what Security Center found wrong in an account's setup, such
 // as a proxied DNS record without "Always Use HTTPS" or an exposed origin. Guard reads them with
-// an account API token that has "Account Security Center Insights: Read" and nothing more.
+// an account API token that has "Account Security Center Insights: Read" for the account and
+// "Zone Security Center Insights: Read" for all its zones, and nothing more. With the first alone,
+// the account's insights come back without those of its zones (measured 2026-11-14: 29 of 111,
+// with none of the 4 critical ones), and the call still succeeds.
 
 const CLOUDFLARE_API = "https://api.cloudflare.com/client/v4";
 /** The API's ceiling on `per_page`. */

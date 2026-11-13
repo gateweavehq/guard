@@ -43,7 +43,7 @@ export async function checkCloudflare(
 			ok: false,
 			error:
 				trouble("Cloudflare", error) ??
-				"Cloudflare did not accept this token for that account. It needs the permission Account › Security Center Insights › Read, on the account with that id.",
+				"Cloudflare did not accept this token for that account. It needs the permission Account › Security Center Insights › Read on the account with that id, and Zone › Security Center Insights › Read on its zones.",
 		};
 	}
 }

@@ -59,7 +59,7 @@ const TEXT = {
 	} satisfies Record<string, string>,
 	fix: {
 		cloudflare:
-			"Replace it with a token that has Account › Security Center Insights › Read on this account.",
+			"Replace it with a token that has Account › Security Center Insights › Read on this account, and Zone › Security Center Insights › Read on all its zones.",
 		github: "Replace it with a token for this repository that has Contents: Read-only.",
 	} satisfies Record<ConnectionKind, string>,
 	scanNow: "Scan now",
@@ -77,7 +77,7 @@ const TEXT = {
 	cloudflare: {
 		heading: "Connect a Cloudflare account",
 		steps:
-			"Create an account API token with one permission, Account › Security Center Insights › Read, for this account only. Guard asks for nothing more and only reads.",
+			"Create an account API token with two permissions, both read: Account › Security Center Insights › Read for this account, and Zone › Security Center Insights › Read for all zones of this account. Without the second, Cloudflare gives only the account's own insights, and none about its domains. Guard asks for nothing more and only reads.",
 		tokenPage: "Create an account API token",
 		profilePage: "or a user API token",
 		accountId: "Account id",
