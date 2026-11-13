@@ -1,0 +1,99 @@
+// Guard deploys from the repository root, where the "Deploy to Cloudflare" button looks for this
+// file; the app itself lives in apps/web, which runs Wrangler and Vite against it.
+{
+	"$schema": "apps/web/node_modules/wrangler/config-schema.json",
+	"name": "gateweave-guard",
+	"main": "apps/web/src/server.ts",
+	"compatibility_date": "2026-10-01",
+	"compatibility_flags": ["nodejs_compat"],
+	// Settings made in the dashboard stay through a deploy. Wrangler otherwise removes a plain-text
+	// variable it does not find here, so the next push would quietly take away a setting.
+	"keep_vars": true,
+	// Wrangler will not build a branch's Preview without this block, which would fail every push to a
+	// branch, Dependabot's included. A Preview gets none of this file's bindings and none of the
+	// Worker's secrets, so it only says that it is not set up. docs/self-hosting.md has the rest.
+	"previews": {},
+	"observability": { "enabled": true },
+	"upload_source_maps": true,
+	// Once a day, deletes sessions, verifications and invitations past their time. Environments
+	// inherit this.
+	"triggers": { "crons": ["29 3 * * *"] },
+	// Accounts, workspaces, and who runs the deployment. The database is provisioned on first deploy.
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "gateweave-guard",
+			"migrations_dir": "apps/web/migrations"
+		}
+	],
+	// Rate limits on sign-in, password reset and email are counted in one Durable Object per client
+	// address or recipient.
+	"durable_objects": {
+		"bindings": [{ "name": "RATE_LIMITER", "class_name": "RateLimiter" }]
+	},
+	"exports": {
+		"RateLimiter": { "type": "durable-object", "storage": "sqlite" }
+	},
+	// Email through Cloudflare Email Service. Nothing is sent until EMAIL_FROM names a sender on a
+	// domain onboarded to Email Sending; without it, Guard runs with email off.
+	"send_email": [{ "name": "EMAIL" }],
+	// Optional: GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, OIDC_ISSUER, OIDC_CLIENT_ID,
+	// OIDC_CLIENT_SECRET, OIDC_PROVIDER_NAME, BETTER_AUTH_URL, EMAIL_FROM, the legal page addresses,
+	// DURABLE_OBJECT_JURISDICTION and SIGN_UP_REQUEST_URL (see apps/web/src/server/env.d.ts).
+	"secrets": { "required": ["BETTER_AUTH_SECRET"] },
+	// The top level is what self-hosters deploy. Gateweave Cloud deploys the environments below:
+	// `cloud` is https://guard.gateweave.com, the Worker the top level names, and `staging` a separate
+	// Worker. Both keep their data in the EU: the databases were created with the `eu` jurisdiction,
+	// and DURABLE_OBJECT_JURISDICTION keeps the Durable Objects there.
+	// Bindings are not inherited, so each environment repeats them.
+	// Each runs its Worker near its EU database, which answers from one place: a Worker far away
+	// would make every query across an ocean, one after another. Static files are still served from
+	// the nearest place. The region is a hint for where the database's primary answered from when
+	// it was made (`served_by_colo`), so check it again if a database is ever moved.
+	"env": {
+		"cloud": {
+			"name": "gateweave-guard",
+			"routes": [{ "pattern": "guard.gateweave.com", "custom_domain": true }],
+			// The database's primary answers from Warsaw (WAW).
+			"placement": { "region": "gcp:europe-central2" },
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "gateweave-guard-eu",
+					"database_id": "621f0e88-a743-4aef-91cd-374acd9cf157",
+					"migrations_dir": "apps/web/migrations"
+				}
+			],
+			"durable_objects": {
+				"bindings": [{ "name": "RATE_LIMITER", "class_name": "RateLimiter" }]
+			},
+			"vars": {
+				"DURABLE_OBJECT_JURISDICTION": "eu",
+				// While sign-up is by invitation, "Ask for access" leads to Gateweave Cloud's waitlist.
+				"SIGN_UP_REQUEST_URL": "https://gateweave.com/waitlist"
+			},
+			"send_email": [{ "name": "EMAIL" }],
+			"secrets": { "required": ["BETTER_AUTH_SECRET"] }
+		},
+		"staging": {
+			"name": "gateweave-guard-staging",
+			"routes": [{ "pattern": "guard-staging.gateweave.com", "custom_domain": true }],
+			// The database's primary answers from Milan (MXP).
+			"placement": { "region": "gcp:europe-west8" },
+			"d1_databases": [
+				{
+					"binding": "DB",
+					"database_name": "gateweave-guard-staging-eu",
+					"database_id": "46afba2f-8f53-4325-9b57-cd1cfe48283b",
+					"migrations_dir": "apps/web/migrations"
+				}
+			],
+			"durable_objects": {
+				"bindings": [{ "name": "RATE_LIMITER", "class_name": "RateLimiter" }]
+			},
+			"vars": { "DURABLE_OBJECT_JURISDICTION": "eu" },
+			"send_email": [{ "name": "EMAIL" }],
+			"secrets": { "required": ["BETTER_AUTH_SECRET"] }
+		}
+	}
+}
