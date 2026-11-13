@@ -67,7 +67,9 @@ describe("listInsights", () => {
 						dismissed: true,
 						user_classification: "accept_risk",
 						resolve_link: "javascript:alert(1)",
-						payload: null,
+						// Seen from the real API: translation keys where the text should be.
+						resolve_text: "security_center.checks.access_policies.resolution_button",
+						payload: { detection_method: "security_center.checks.access_policies.detection" },
 					}),
 				],
 				2,
@@ -98,6 +100,7 @@ describe("listInsights", () => {
 			userClassification: "accept_risk",
 			resolveUrl: `https://dash.cloudflare.com/${ACCOUNT}/security-center`,
 			detectionMethod: null,
+			resolveText: null,
 			zoneTag: null,
 		});
 	});

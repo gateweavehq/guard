@@ -76,6 +76,17 @@ function severityOf(value: string | null | undefined): InsightSeverity {
 	return lower === "critical" || lower === "low" ? lower : "moderate";
 }
 
+/**
+ * Text meant for people, or null. For some insights the API sends the dashboard's translation
+ * key ("security_center.checks.access_policies.detection") where the text should be, which is no
+ * use to anyone reading it.
+ */
+function prose(value: string | null | undefined): string | null {
+	const trimmed = value?.trim();
+	if (!trimmed || /^[a-z0-9_]+(?:\.[a-z0-9_]+)+$/.test(trimmed)) return null;
+	return trimmed;
+}
+
 const DASHBOARD = "https://dash.cloudflare.com";
 
 /**
@@ -146,8 +157,8 @@ export async function listInsights(
 				status: issue.status === "resolved" ? "resolved" : "active",
 				dismissed: issue.dismissed,
 				userClassification: issue.user_classification ?? null,
-				detectionMethod: issue.payload?.detection_method ?? null,
-				resolveText: issue.resolve_text ?? null,
+				detectionMethod: prose(issue.payload?.detection_method),
+				resolveText: prose(issue.resolve_text),
 				resolveUrl: dashboardUrl(issue.resolve_link, account.accountId),
 				zoneTag: issue.payload?.zone_tag ?? null,
 				source: issue.source ?? "cloudflare",
