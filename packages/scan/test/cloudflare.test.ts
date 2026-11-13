@@ -53,7 +53,8 @@ describe("listInsights", () => {
 			`https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/security-center/insights?page=2&per_page=1000`,
 		]);
 		expect(requests[0]?.headers.get("authorization")).toBe(`Bearer ${TOKEN}`);
-		expect(requests[0]?.method).toBe("GET");
+		// Guard only reads what it connects to.
+		expect(requests.every((request) => request.method === "GET")).toBe(true);
 	});
 
 	it("maps an insight into Guard's shape", async () => {

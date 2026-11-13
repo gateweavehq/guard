@@ -27,12 +27,15 @@ rules.
 | Path              | What lives there                                                          |
 | ----------------- | ------------------------------------------------------------------------- |
 | `apps/web`        | The Worker: TanStack Start UI, Better Auth, rate limiting, email, D1      |
+| `packages/scan`   | What scans read: Security Insights, GitHub, lockfiles, OSV. No bindings   |
 | `docs/`           | Architecture and self-hosting                                             |
 | `scripts/`        | Repository tooling (`doctor`)                                             |
 | `.claude/skills/` | Step-by-step playbooks for recurring tasks (plain Markdown, any agent)    |
 | `wrangler.jsonc`  | The Worker's config, at the root because the Deploy button reads it there |
 
-Add another package only when a second consumer needs the same code, not before.
+`packages/scan` talks to Cloudflare, GitHub and OSV with nothing but `fetch`, so it is tested in
+Node against recorded answers. Keep Worker bindings, D1 and sealing out of it. Add another
+package only when code stands on its own the same way, not before.
 
 Wrangler commands that use the build output (`deploy`, `versions upload`, `preview`) must run
 from the repository root, where the build leaves its pointer next to `wrangler.jsonc`. Use

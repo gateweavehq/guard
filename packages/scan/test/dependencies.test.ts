@@ -31,7 +31,7 @@ const NPM = JSON.stringify({
 describe("scanRepository", () => {
 	it("reads every lockfile of the default branch and looks each package up once", async () => {
 		const osvQueries: string[] = [];
-		const { fetch } = fakeFetch(async (request) => {
+		const { fetch, requests } = fakeFetch(async (request) => {
 			const url = new URL(request.url);
 			const path = url.pathname;
 			if (url.host === "api.github.com") {
@@ -96,6 +96,16 @@ describe("scanRepository", () => {
 
 		const scan = await scanRepository({ owner: "acme", name: "shop" }, "token", { fetch });
 
+		// Guard only reads what it connects to: nothing but GETs reach GitHub, and the repository's
+		// token goes nowhere else.
+		const github = requests.filter((request) => new URL(request.url).host === "api.github.com");
+		expect(github.length).toBeGreaterThan(0);
+		expect(new Set(github.map((request) => request.method))).toEqual(new Set(["GET"]));
+		for (const request of requests) {
+			if (new URL(request.url).host !== "api.github.com") {
+				expect(request.headers.get("authorization")).toBeNull();
+			}
+		}
 		expect(scan.commit).toBe(COMMIT);
 		expect(scan.repository.defaultBranch).toBe("trunk");
 		expect(osvQueries.sort()).toEqual(["lodash@4.17.19", "lodash@4.17.20", "react@18.3.1"]);
