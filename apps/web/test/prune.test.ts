@@ -103,11 +103,16 @@ describe("the schedule", () => {
 	const config = resolve(import.meta.dirname, "../../../wrangler.jsonc");
 
 	// A handler with no schedule never runs, and nothing would say so: the tables just keep growing.
+	// The second is the hourly scan of connections, which server.ts tells from the daily run by the
+	// cron's text, so a change to either is a change there.
 	it.each([
 		["a self-hosted deployment", undefined],
 		["staging", "staging"],
 		["cloud", "cloud"],
-	])("runs on %s", (_name, env) => {
-		expect(unstable_readConfig({ config, env }).triggers.crons).toEqual(["29 3 * * *"]);
+	])("runs on %s, daily and hourly", (_name, env) => {
+		expect(unstable_readConfig({ config, env }).triggers.crons).toEqual([
+			"29 3 * * *",
+			"0 * * * *",
+		]);
 	});
 });

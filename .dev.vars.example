@@ -36,3 +36,16 @@ BETTER_AUTH_SECRET=
 # Optional: where "Ask for access" leads once the owner of this deployment has closed sign-up (an
 # https address). No link when unset.
 # SIGN_UP_REQUEST_URL=
+
+# Optional: seals the tokens of Cloudflare accounts and GitHub repositories that workspaces connect,
+# which can't be connected without it. 32 random bytes, base64: openssl rand -base64 32.
+# `pnpm dev:setup` fills one in.
+# SECRETS_KEY=
+# When changing it, the key before, which then only opens what it sealed (docs/self-hosting.md).
+# SECRETS_KEY_PREVIOUS=
+
+# Optional, for tests and mirrors: where Cloudflare's API, GitHub's API and OSV are reached when it
+# is not at their own hosts. Leave them out to use the real ones.
+# CLOUDFLARE_API_URL=
+# GITHUB_API_URL=
+# OSV_API_URL=

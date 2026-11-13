@@ -253,15 +253,18 @@ export async function startGuard(
 		db,
 		/** The Worker's `BETTER_AUTH_SECRET`, to check what it signs. */
 		secret,
-		/** Runs the Worker's Cron Trigger once, as Cloudflare would, in one copy of the Worker. */
-		async runScheduled(isolate = 0) {
+		/**
+		 * Runs one of the Worker's Cron Triggers once, as Cloudflare would, in one copy of the Worker.
+		 * The daily one unless `cron` says another, such as the hourly `0 * * * *`.
+		 */
+		async runScheduled(isolate = 0, cron = "29 3 * * *") {
 			const name = names[isolate];
 			if (!name) throw new Error(`There are only ${names.length} isolates`);
 			// Miniflare's Fetcher type leaves out the scheduled() workerd adds to every Worker stub.
 			const worker = (await mf.getWorker(name)) as unknown as {
 				scheduled(event: { cron: string; scheduledTime: Date }): Promise<unknown>;
 			};
-			await worker.scheduled({ cron: "29 3 * * *", scheduledTime: new Date() });
+			await worker.scheduled({ cron, scheduledTime: new Date() });
 		},
 		dispose: () => mf.dispose(),
 	};

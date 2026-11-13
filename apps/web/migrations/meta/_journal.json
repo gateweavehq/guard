@@ -22,6 +22,20 @@
       "when": 1794607685880,
       "tag": "0002_sign_up_hold",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1794609557314,
+      "tag": "0003_connections",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1794609557992,
+      "tag": "0004_connection_cap",
+      "breakpoints": true
     }
   ]
 }

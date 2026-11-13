@@ -51,6 +51,27 @@ export async function allowSpentTriesEmail(userId: string): Promise<boolean> {
 	return allowed;
 }
 
+/** "Scan now" on one connection: once in five minutes, however many admins press it. */
+export const SCAN_NOW_PER_CONNECTION: Rule[] = [{ window: 5 * 60, max: 1 }];
+
+/** Whether an admin may start a scan of this connection now. Counts this one if so. */
+export async function allowScanNow(connectionId: string): Promise<boolean> {
+	const { allowed } = await consumeDurably(`scan-now:${connectionId}`, SCAN_NOW_PER_CONNECTION);
+	return allowed;
+}
+
+/**
+ * Tokens a workspace may offer for checking: each is sent to Cloudflare or GitHub, so a stolen
+ * session cannot use Guard to try them quickly. 20 at once, refilling over an hour.
+ */
+export const CONNECTS_PER_WORKSPACE: Rule[] = [{ window: 60 * 60, max: 20 }];
+
+/** Whether this workspace may try another token. Counts this one if so. */
+export async function allowConnect(workspaceId: string): Promise<boolean> {
+	const { allowed } = await consumeDurably(`connect:${workspaceId}`, CONNECTS_PER_WORKSPACE);
+	return allowed;
+}
+
 const local = new LocalLimiter();
 
 /**

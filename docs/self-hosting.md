@@ -1,10 +1,11 @@
 # Self-hosting
 
 Gateweave Guard runs on your own Cloudflare account as one Worker. It is early: today it has
-accounts, workspaces with members and invitations, and the empty screens that findings and
-connections will fill. It uses:
+accounts, workspaces with members and invitations, connections to Cloudflare accounts and GitHub
+repositories, and the findings their scans make. It uses:
 
-- a D1 database for accounts, sessions, the list of workspaces and who runs the deployment;
+- a D1 database for accounts, sessions, the list of workspaces, who runs the deployment, and the
+  workspaces' connections (their tokens sealed), scans and findings;
 - a Durable Object that counts rate limits, one per client address or recipient;
 - optionally, Cloudflare Email Service, to send password resets, verification and invitations.
 
@@ -29,6 +30,9 @@ push to its main branch deploys. On the form:
   before you deploy.
 - **BETTER_AUTH_SECRET** signs sessions. Use a long random string, for example from
   `openssl rand -base64 32`, and keep it secret. Changing it later signs everyone out.
+- **SECRETS_KEY** seals the tokens of connections, and is not on the form, since it is optional:
+  add it afterwards (see [Connections and SECRETS_KEY](#connections-and-secrets_key)). Until you do,
+  accounts and workspaces work and nothing can be connected.
 - Leave the build and deploy commands as they are. The deploy command applies the database
   migrations before the new code goes live.
 
@@ -131,6 +135,44 @@ because `wrangler.jsonc` sets `keep_vars`.
 | `TERMS_URL`                   | The address of your terms.                                                                                         |
 | `DURABLE_OBJECT_JURISDICTION` | Keeps the Durable Objects in `eu`, `us`, `fedramp` or `fedramp-high`. Unset: no jurisdiction.                      |
 | `SIGN_UP_REQUEST_URL`         | An https address that "Ask for access" leads to once the owner closes sign-up. Unset: no link.                     |
+| `SECRETS_KEY`                 | Seals the tokens of connections. Without it nothing can be connected. See [below](#connections-and-secrets_key).   |
+| `SECRETS_KEY_PREVIOUS`        | The key before, while `SECRETS_KEY` is being changed. Only opens what it sealed.                                   |
+| `CLOUDFLARE_API_URL`          | For tests and mirrors: where Cloudflare's API is reached. Unset: `https://api.cloudflare.com/client/v4`.           |
+| `GITHUB_API_URL`              | For tests and mirrors: where GitHub's API is reached. Unset: `https://api.github.com`.                             |
+| `OSV_API_URL`                 | For tests and mirrors: where OSV is reached. Unset: `https://api.osv.dev/v1`.                                      |
+
+### Connections and SECRETS_KEY
+
+Owners and admins connect a Cloudflare account (its id and an API token) or a GitHub repository
+(`owner/name` and a fine-grained token) on the Connections page. Guard checks the token, seals it
+and scans: the first scan runs while they wait, then every day, and whenever an admin presses
+"Scan now" (once in five minutes per connection). Nothing else is needed from you but one secret.
+
+`SECRETS_KEY` is 32 random bytes in base64, such as `openssl rand -base64 32`. It seals every token
+before it is stored (AES-256-GCM, with a key derived from it and the workspace, so a token copied
+into another row does not open). Without it, or with one shorter than 32 bytes, the page says the
+server is not set up for connections and refuses to take a token. `pnpm dev:setup` makes one for
+local development.
+
+**Changing it.** Set the new key as `SECRETS_KEY` and the old one as `SECRETS_KEY_PREVIOUS`. The
+daily run seals every token again under the new key, up to 500 a run, and logs `secrets:` with how
+many it sealed, how many opened with neither key and how many are still under another. Once `left` is
+0, remove `SECRETS_KEY_PREVIOUS`. A token that opens with neither key is not lost to the workspace:
+its connection says it needs attention and an admin replaces the token. Do not lose the key: without
+it, every connection needs a new token.
+
+**Scans** run from two Cron Triggers in `wrangler.jsonc`, both inherited by every environment: the
+daily one (`29 3 * * *`) clears what is past its time and seals tokens again after a key change, and
+the hourly one (`0 * * * *`) scans the connections whose day has passed, oldest first, at most 10 an
+hour, one after another. A deployment with more than 240 connections falls behind its day; see
+"Scans without a Queue" in [architecture.md](architecture.md). Remove the hourly trigger and nothing
+scans except "Scan now".
+
+**What Guard asks for.** Cloudflare: an account API token with one permission, Account › Security
+Center Insights › Read. GitHub: a fine-grained token for the one repository, with Contents set to
+Read-only (GitHub adds Metadata itself). Guard only reads. The tokens, the sealed copies and the
+findings live in D1, and Guard sends OSV only package names and versions, never a repository's name or
+files.
 
 ### Your own domain
 

@@ -15,9 +15,10 @@
 	"previews": {},
 	"observability": { "enabled": true },
 	"upload_source_maps": true,
-	// Once a day, deletes sessions, verifications and invitations past their time. Environments
-	// inherit this.
-	"triggers": { "crons": ["29 3 * * *"] },
+	// Once a day, deletes sessions, verifications and invitations past their time, and seals tokens
+	// again after SECRETS_KEY changed. Every hour, scans the connections whose time has come
+	// ("0 * * * *" is SCAN_CRON in apps/web/src/server.ts). Environments inherit this.
+	"triggers": { "crons": ["29 3 * * *", "0 * * * *"] },
 	// Accounts, workspaces, and who runs the deployment. The database is provisioned on first deploy.
 	"d1_databases": [
 		{
@@ -37,9 +38,11 @@
 	// Email through Cloudflare Email Service. Nothing is sent until EMAIL_FROM names a sender on a
 	// domain onboarded to Email Sending; without it, Guard runs with email off.
 	"send_email": [{ "name": "EMAIL" }],
-	// Optional: GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, OIDC_ISSUER, OIDC_CLIENT_ID,
-	// OIDC_CLIENT_SECRET, OIDC_PROVIDER_NAME, BETTER_AUTH_URL, EMAIL_FROM, the legal page addresses,
-	// DURABLE_OBJECT_JURISDICTION and SIGN_UP_REQUEST_URL (see apps/web/src/server/env.d.ts).
+	// Optional: SECRETS_KEY (without it nothing can be connected), SECRETS_KEY_PREVIOUS,
+	// GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET, OIDC_ISSUER, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET,
+	// OIDC_PROVIDER_NAME, BETTER_AUTH_URL, EMAIL_FROM, the legal page addresses,
+	// DURABLE_OBJECT_JURISDICTION, SIGN_UP_REQUEST_URL, and CLOUDFLARE_API_URL, GITHUB_API_URL and
+	// OSV_API_URL for tests and mirrors (see apps/web/src/server/env.d.ts).
 	"secrets": { "required": ["BETTER_AUTH_SECRET"] },
 	// The top level is what self-hosters deploy. Gateweave Cloud deploys the environments below:
 	// `cloud` is https://guard.gateweave.com, the Worker the top level names, and `staging` a separate

@@ -13,14 +13,16 @@ its repositories (checked against OSV), and to turn each finding into a
 [Gateweave](https://gateweave.com), next to [Gateweave ID](https://github.com/gateweavehq/id) and
 [Gateweave Mail](https://github.com/gateweavehq/mail). Everything ships as one Worker.
 
-It is a skeleton. Today it has accounts (sign-up, sign-in, password reset, an account page, sign-in
+It is early. Today it has accounts (sign-up, sign-in, password reset, an account page, sign-in
 through an OpenID Connect provider), workspaces with members and invitations, a deployment owner
-who decides who may make an account, and the screens that findings and connections will fill: they
-say, honestly, that there is nothing yet. Connections, findings, sealing of tokens and everything
-that reads from a Cloudflare account or a repository come in later steps.
+who decides who may make an account, and connections: admins connect a Cloudflare account or a
+GitHub repository with a token, sealed under `SECRETS_KEY`, and scans (daily, and on "Scan now")
+turn Security Insights and vulnerable dependencies into findings that members read and admins
+dismiss. WAF and bot aggregates, Track issues and Agents pull requests from findings, email and MCP
+come in later steps.
 
-Read [docs/architecture.md](docs/architecture.md) before changing auth or the deployment's sign-up
-rules.
+Read [docs/architecture.md](docs/architecture.md) before changing auth, the deployment's sign-up
+rules, or anything about connections, sealing and scans.
 
 ## Repository map
 
@@ -34,8 +36,11 @@ rules.
 | `wrangler.jsonc`  | The Worker's config, at the root because the Deploy button reads it there |
 
 `packages/scan` talks to Cloudflare, GitHub and OSV with nothing but `fetch`, so it is tested in
-Node against recorded answers. Keep Worker bindings, D1 and sealing out of it. Add another
-package only when code stands on its own the same way, not before.
+Node against recorded answers. Keep Worker bindings, D1 and sealing out of it: `apps/web` opens a
+token, passes it in, and writes what comes back (`apps/web/src/server/connections/`). The Worker
+reaches the three services through `CLOUDFLARE_API_URL`, `GITHUB_API_URL` and `OSV_API_URL` when
+they are set, which is how its tests serve recorded answers (`apps/web/test/upstreams.ts`). Add
+another package only when code stands on its own the same way, not before.
 
 Wrangler commands that use the build output (`deploy`, `versions upload`, `preview`) must run
 from the repository root, where the build leaves its pointer next to `wrangler.jsonc`. Use
@@ -81,10 +86,10 @@ These are load-bearing. Breaking one breaks users' data or security, usually sil
    itself. A change to either is made by a person, or by an agent a person asked, in another
    product.
 2. **Tokens are sealed at rest and never logged or shown again.** A credential for an account or a
-   repository is encrypted before it is written, opened only to read, and pages see at most its
-   last four characters. The sealing comes in a later step, and until it lands no code may store
-   a token: connections are not built yet for that reason. Never log one, return one or put one in
-   an error.
+   repository is encrypted before it is written (`apps/web/src/server/secrets.ts`, under
+   `SECRETS_KEY`; without a usable key connecting is refused), opened only inside a scan or a
+   check, and pages see at most its last four characters (`token_hint`). Never log one, return one
+   or put one in an error, and never store one anywhere but `connection.token_sealed`.
 3. **Traffic data is stored as aggregates only.** Counts by rule, action, country and time. Never
    an IP address, a user agent or a request path, however briefly, and never in a log.
 4. **Workspaces are private.** Every server function that reads or changes workspace data checks
@@ -148,7 +153,10 @@ the cost.
 - Test behavior through public APIs, not internals.
 - `apps/web` has unit tests in `src/` and Worker tests in `test/`. The Worker tests build the app
   and run it in workerd through Miniflare, with every outbound request failing as a deployed
-  Worker's request to its own hostname does; see `test/guard-worker.ts`.
+  Worker's request to its own hostname does; see `test/guard-worker.ts`. Cloudflare, GitHub and
+  OSV are stand-ins with answers shaped as the real ones, and tests change their state between
+  scans (`test/upstreams.ts`, `test/connections-world.ts`); the hourly scan is run with
+  `runScheduled(isolate, "0 * * * *")`.
 - There are no browser tests yet. A later step adds Guard's own (Playwright, against the
   production build). Until then, check a page you changed in a browser (`run-locally`).
 - Every bug fix gets a test that fails without the fix. Never weaken or skip a test to make a

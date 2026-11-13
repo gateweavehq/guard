@@ -38,5 +38,19 @@ declare namespace Cloudflare {
 		LEGAL_NOTICE_URL?: string;
 		PRIVACY_POLICY_URL?: string;
 		TERMS_URL?: string;
+		/**
+		 * Seals the tokens of workspaces' connections: 32 random bytes, base64. Without it nothing can
+		 * be connected. When changing it, `SECRETS_KEY_PREVIOUS` keeps the old one for opening what it
+		 * sealed, until the daily run has sealed that again. See docs/self-hosting.md.
+		 */
+		SECRETS_KEY?: string;
+		SECRETS_KEY_PREVIOUS?: string;
+		/**
+		 * Where Cloudflare's API, GitHub's API and OSV are reached, when it is not at their own hosts:
+		 * for tests and mirrors. Each is the API's base address, such as `https://api.github.com`.
+		 */
+		CLOUDFLARE_API_URL?: string;
+		GITHUB_API_URL?: string;
+		OSV_API_URL?: string;
 	}
 }

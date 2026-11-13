@@ -17,6 +17,11 @@ export const OPTIONAL_SECRETS = [
 	"TERMS_URL",
 	"DURABLE_OBJECT_JURISDICTION",
 	"SIGN_UP_REQUEST_URL",
+	"SECRETS_KEY",
+	"SECRETS_KEY_PREVIOUS",
+	"CLOUDFLARE_API_URL",
+	"GITHUB_API_URL",
+	"OSV_API_URL",
 ] as const;
 
 /** What local dev loads from .dev.vars: the required secrets, and the optional ones it sets. */

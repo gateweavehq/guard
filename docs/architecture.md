@@ -35,9 +35,89 @@ One Worker (`apps/web`), the same shape as Gateweave Track, Gateweave Agents and
   own `Origin`, which Better Auth checks for its routes.
 
 What a workspace shows today is the shell and no more: a page each for **Findings** and
-**Connections**, which say honestly that there is nothing yet, **Settings** (members, invitations,
-the workspace itself) and, for whoever runs the deployment, **Server**. Nothing in Guard reads
-from a Cloudflare account or a repository yet.
+**Connections**, **Settings** (members, invitations, the workspace itself) and, for whoever runs
+the deployment, **Server**. A workspace with nothing connected says so, and a workspace with
+connections and nothing wrong says "No open findings." Guard reads from a Cloudflare account
+or a repository only once an admin has connected it: see the next section.
+
+### Connections, scans and findings
+
+An owner or admin connects a **Cloudflare account** (its id and an account API token) or a **GitHub
+repository** (`owner/name` and a fine-grained token). Everyone in the workspace sees the connections
+and findings, without tokens. Guard only reads: it asks for the least access that reads (Account ›
+Security Center Insights › Read; Contents: Read-only on one repository), and nothing in it changes a
+setting, a rule or a file. The endpoints are `/api/connections/<workspace>` and
+`/api/findings/<workspace>` (`apps/web/src/server/connections/`), the pages are the Connections and
+Findings screens, and the schemas both agree on are in `apps/web/src/lib/connection-schemas.ts`.
+
+- **Every request asks first.** A change needs the app's own `Origin`, a session, and
+  `isAdminRole` for the member's role; a non-member gets the same "not found" as a missing
+  workspace. Input is checked with zod at the boundary: a Cloudflare account id is 32 hex
+  characters, a repository goes through `parseRepositoryName`, a token is 20 to 400 printable
+  characters without spaces, and a reason for dismissing is at most 200.
+- **A token is checked before it is kept.** Cloudflare: one `listInsights` call, where a refusal
+  names the permission Account › Security Center Insights › Read (Guard cannot read a Cloudflare
+  token's own permissions, so a call that needs it is the only proof). GitHub: `getRepository`, then
+  `branchHead`, which proves Contents read; the repository's id is kept, since a rename keeps it. A
+  workspace has up to 50 connections (checked in the endpoint, held by the trigger
+  `connection_is_capped` in `0004_connection_cap.sql`), each target once, and a repository once
+  however its name is written (`connection_repository_unique`). Checking tokens is rate limited per
+  workspace (20 at once, refilling over an hour), since each goes to a third party.
+- **A token is sealed** (`secrets.ts`, `secrets-key.ts`, ported from Gateweave Mail). `SECRETS_KEY`
+  is 32 random bytes; each use gets its own AES-256-GCM key by HKDF from it and the workspace's id,
+  and the connection's id is the additional data (`connection/<id>/token`), so a sealed token copied
+  into another row or workspace does not open. A seal is `v2.<key id>.<iv>.<data>`; the key id is a
+  keyed digest of the key, so a seal names the key that opens it. `SECRETS_KEY_PREVIOUS` only opens.
+  After the key changes, the daily run seals each token again under the new key
+  (`reseal-secrets.ts`: up to 500 a run, in pages so tokens that open with neither key never hold up
+  the rest, each written only if it is still the value that was read), and logs `secrets:` with
+  counts only. Without a usable `SECRETS_KEY`, connecting is refused with the reason and the page
+  says the server is not set up for it. A token is opened only inside a scan or a check, never
+  returned: pages get `token_hint`, its last four characters. Nothing logs a token, and
+  `packages/scan`'s errors carry the status and no body.
+- **A scan reads, then writes in one D1 batch.** Cloudflare: `listInsights`, where an insight that is
+  `active` and not `dismissed` in Cloudflare's dashboard is present. GitHub: `scanRepository`, one
+  finding per lockfile, package and advisory. Each present problem has a **fingerprint**
+  (`insightFingerprint`: account, class and subject; `dependencyFingerprint`: repository id,
+  lockfile, package and advisory, without the installed version, so moving to another affected
+  version is the same finding). A present finding that is new is inserted; one already known has its
+  severity, title, subject, link and last-seen time updated and is **reopened** if it was resolved;
+  an open one that is no longer present is **resolved**. What a scan could not see does not count as
+  gone: a lockfile Guard cannot read or that is too large keeps its findings as they are, and so does
+  a repository GitHub listed only in part. **A dismissed finding stays dismissed whatever a scan
+  sees**, until an admin un-dismisses it, and so is kept up to date underneath. A scan that fails
+  changes no finding, and records its kind on the connection (`unauthorized`, `forbidden` and
+  `not_found` mean it needs attention, and the page says what to fix; `rate_limited` and
+  `unavailable` are tried again within the hour; `unreadable` means the stored token no longer
+  opens). The last 30 scans of a connection are kept, with how many problems were found, new and
+  closed.
+- **Findings hold what a page shows and nothing of what was read:** the severity, a kind (the
+  insight's class, or the advisory's id), the subject (hostname or zone, or `package@versions in
+  lockfile`), a title, a link, the fixed version, and when it was first and last seen, resolved and
+  dismissed. No insight payload and no lockfile content is stored. The title of a Security Insight
+  is Guard's own short English text per class (`server/connections/titles.ts`), since the API
+  sometimes sends translation keys; a class Guard has not seen gets its name made readable. The
+  link is the dashboard URL `packages/scan` builds, which can only point at `dash.cloudflare.com`,
+  or the advisory on osv.dev. Removing a connection deletes its token, findings and scans at once,
+  by foreign-key cascade.
+- **Scans without a Queue.** The hourly Cron Trigger (`0 * * * *`) scans the connections whose
+  `next_scan_at` has passed, oldest first, at most 10 a run, one after another, and then sets
+  the next scan a day ahead (an hour ahead after a failure that passes with time). "Scan now" runs
+  the scan inside the request, for admins, at most once in five minutes per connection (the
+  `RateLimiter`). A connection is never scanned twice at once: a conditional `UPDATE` sets
+  `scan_started_at` before the token is read, and only the scan that set it goes on; a scan that
+  dies lets go by itself after ten minutes. There is no Queue because a self-hoster then gets no
+  extra resource to create and pay for, and a scan is a few seconds and a handful of subrequests
+  (one for Cloudflare; a few for GitHub plus OSV's batched lookups), which one Worker invocation
+  carries. A Queue would be needed when scans stop fitting: more than 240 connections on one
+  deployment (10 an hour), a repository whose scan outruns an invocation's CPU or subrequest limits,
+  or scans that must not wait for the hour. Each scan would then be a message, with retries and
+  backoff for the failures that pass with time, and the claim in D1 would stay as it is.
+- **The first scan runs when the token is connected,** in that request, so the page has something
+  to show; if it fails, the connection stays and says what failed.
+- **An admin can replace a token** (`replace-token`): the new one is checked the same way, for the
+  same repository, then sealed and scanned. It is how a connection that needs attention is mended
+  without losing what has been dismissed.
 
 ### Words and numbers
 
@@ -136,7 +216,7 @@ Agents and Mail have the same code, and the same reasons.
 - **Guard keeps no tokens of the sign-in.** It signs people in and never acts for them at the
   provider, so the account hook clears them all, and the ID token too, as soon as it has served its
   purpose. The same goes for signing in with GitHub. (Tokens for the accounts and repositories
-  Guard will read are another matter, and come with sealing, below.)
+  Guard will read are another matter, and are sealed: see "Connections, scans and findings".)
 - **The provider can end sessions.** `POST /api/auth/backchannel-logout/oidc` takes a logout token,
   checked against the provider's keys: issuer, audience, at most 5 minutes old, the logout event and
   no nonce. A session row keeps the `sid` of the ID token it came from (`session.oidc_sid`, never
@@ -186,13 +266,9 @@ People change both on `/settings/account`, through Better Auth's `/update-user` 
 This is where it is going, and it may change. What is above stays as it is: one Worker for the UI,
 the API and auth, with D1 for accounts and workspaces.
 
-- **Connections.** A Cloudflare account, read through an API token, and a GitHub repository.
-  Guard only reads from both: it never changes a setting or a repository by itself.
-- **Findings** from three sources: Cloudflare Security Insights, aggregates of WAF and bot
-  activity per zone, and dependency vulnerabilities, from lockfiles checked against OSV.
+- **Findings from a third source**: aggregates of WAF and bot activity per zone. (Security
+  Insights and dependency vulnerabilities are built: see "Connections, scans and findings".)
 - **Traffic data is stored as aggregates only**: counts by rule, action, country and time. Never
   an IP address, a user agent or a request path.
-- **Sealing connection tokens.** A token Guard is given is sealed at rest, and never logged or
-  shown again, in a step of its own. Until it lands, nothing stores a token.
 - **A finding becomes a Gateweave Track issue**, or a fix pull request from Gateweave Agents.
 - **An MCP server**, so agents can read findings.
