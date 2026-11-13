@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { UpstreamError } from "./errors";
-import { type FetchOptions, readJson, retryAfterSeconds, send } from "./http";
+import { apiBase, type FetchOptions, readJson, retryAfterSeconds, send } from "./http";
 import { type LockfileFormat, lockfileFormat } from "./lockfiles";
 
 // GitHub, read with a fine-grained token limited to the repositories someone chose, with
@@ -54,11 +54,11 @@ function rateLimit(response: Response): UpstreamError | null {
 	});
 }
 
-function repoPath({ owner, name }: RepositoryName): string {
+function repoPath({ owner, name }: RepositoryName, options: FetchOptions): string {
 	if (!OWNER.test(owner) || !NAME.test(name)) {
 		throw new UpstreamError("github", "not_found", "That is not a GitHub repository name");
 	}
-	return `${GITHUB_API}/repos/${owner}/${name}`;
+	return `${apiBase(options, "github", GITHUB_API)}/repos/${owner}/${name}`;
 }
 
 export interface Repository extends RepositoryName {
@@ -84,7 +84,7 @@ export async function getRepository(
 ): Promise<Repository> {
 	const response = await send(
 		"github",
-		repoPath(repo),
+		repoPath(repo, options),
 		{ headers: headers(token) },
 		options,
 		rateLimit,
@@ -112,7 +112,7 @@ export async function branchHead(
 	const ref = branch.split("/").map(encodeURIComponent).join("/");
 	const response = await send(
 		"github",
-		`${repoPath(repo)}/git/ref/heads/${ref}`,
+		`${repoPath(repo, options)}/git/ref/heads/${ref}`,
 		{ headers: headers(token) },
 		options,
 		rateLimit,
@@ -160,7 +160,7 @@ export async function listLockfiles(
 	}
 	const response = await send(
 		"github",
-		`${repoPath(repo)}/git/trees/${commit}?recursive=1`,
+		`${repoPath(repo, options)}/git/trees/${commit}?recursive=1`,
 		{ headers: headers(token) },
 		options,
 		rateLimit,
@@ -191,7 +191,7 @@ export async function readBlob(
 	}
 	const response = await send(
 		"github",
-		`${repoPath(repo)}/git/blobs/${sha}`,
+		`${repoPath(repo, options)}/git/blobs/${sha}`,
 		{ headers: headers(token, "application/vnd.github.raw+json") },
 		options,
 		rateLimit,

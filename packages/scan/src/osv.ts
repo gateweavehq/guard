@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { UpstreamError } from "./errors";
-import { type FetchOptions, readJson, send } from "./http";
+import { apiBase, type FetchOptions, readJson, send } from "./http";
 import type { InstalledPackage } from "./lockfiles";
 import { compareVersions, parseVersion, type Version } from "./semver";
 
@@ -134,7 +134,7 @@ export async function queryAdvisories(
 			}
 			const response = await send(
 				"osv",
-				`${OSV_API}/querybatch`,
+				`${apiBase(options, "osv", OSV_API)}/querybatch`,
 				{
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
@@ -237,7 +237,7 @@ export async function getAdvisory(id: string, options: FetchOptions = {}): Promi
 		throw new UpstreamError("osv", "invalid_response", "osv sent an invalid id");
 	const response = await send(
 		"osv",
-		`${OSV_API}/vulns/${encodeURIComponent(id)}`,
+		`${apiBase(options, "osv", OSV_API)}/vulns/${encodeURIComponent(id)}`,
 		{ headers: { Accept: "application/json" } },
 		options,
 	);

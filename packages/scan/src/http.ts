@@ -5,6 +5,17 @@ export interface FetchOptions {
 	/** Stands in for the global fetch, in tests. */
 	fetch?: typeof fetch;
 	signal?: AbortSignal;
+	/**
+	 * Where each service is reached, when it is not at its own host: for tests and mirrors. A
+	 * service left out is reached at the real one. Each is the API's base, as the default constants
+	 * in `cloudflare.ts`, `github.ts` and `osv.ts` are.
+	 */
+	apiUrls?: Partial<Record<UpstreamService, string>>;
+}
+
+/** The base address of a service's API, without a trailing slash. */
+export function apiBase(options: FetchOptions, service: UpstreamService, fallback: string): string {
+	return (options.apiUrls?.[service] || fallback).replace(/\/+$/, "");
 }
 
 function failureFor(status: number): UpstreamFailure {

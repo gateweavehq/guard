@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { UpstreamError } from "./errors";
-import { type FetchOptions, readJson, send } from "./http";
+import { apiBase, type FetchOptions, readJson, send } from "./http";
 
 // Cloudflare's Security Insights: what Security Center found wrong in an account's setup, such
 // as a proxied DNS record without "Always Use HTTPS" or an exposed origin. Guard reads them with
@@ -137,7 +137,9 @@ export async function listInsights(
 				"cloudflare kept sending more pages",
 			);
 		}
-		const url = new URL(`${CLOUDFLARE_API}/accounts/${account.accountId}/security-center/insights`);
+		const url = new URL(
+			`${apiBase(options, "cloudflare", CLOUDFLARE_API)}/accounts/${account.accountId}/security-center/insights`,
+		);
 		url.searchParams.set("page", String(page));
 		url.searchParams.set("per_page", String(PER_PAGE));
 		const response = await send(
