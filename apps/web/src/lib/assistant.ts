@@ -13,3 +13,24 @@ export const getMcpAddress = createServerFn({ method: "GET" }).handler(async () 
 export function claudeCodeCommand(address: string): string {
 	return `claude mcp add --transport http guard ${address}`;
 }
+
+/** The assistants the signed-in person allowed, newest use first. */
+export const getGrants = createServerFn({ method: "GET" }).handler(async () => {
+	const { grantsOfSession } = await import("#/server/mcp/grants-gateway");
+	return grantsOfSession();
+});
+
+export async function takeBackGrant(
+	clientId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+	try {
+		const response = await fetch("/api/assistants", {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ clientId }),
+		});
+		return (await response.json()) as { ok: true } | { ok: false; error: string };
+	} catch {
+		return { ok: false, error: "That didn't reach the server. Try again." };
+	}
+}

@@ -155,7 +155,8 @@ claude mcp add --transport http guard https://guard.example.com/mcp
 
 In Claude.ai or another client, add `https://guard.example.com/mcp` as a remote MCP server. The
 client registers itself, sends the person to Guard to sign in, and asks them to allow it on a page
-that names the app. Settings, AI assistant, shows the address with a copy button.
+that names the app. Settings, AI assistant, shows the address with a copy button, and lists the
+assistants you allowed, each with a Take back button that ends its access at once.
 
 The assistant acts as the person who allowed it, in every workspace they belong to, and can do what
 the Findings and Traffic pages let that person do: read findings, and for an owner or admin dismiss

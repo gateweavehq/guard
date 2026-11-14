@@ -5,7 +5,7 @@ import { z } from "zod";
 import { LegalLinks } from "#/components/legal-links";
 import { Button } from "#/components/ui/button";
 import { authClient, inAuthorizationFlow } from "#/lib/auth-client";
-import { getConsentRequest } from "#/lib/oauth";
+import { getConsentRequest, redirectDestination } from "#/lib/oauth";
 import { getLegalLinks } from "#/lib/session";
 import { useDocumentTitle } from "#/lib/title";
 
@@ -82,8 +82,10 @@ function ConsentPage() {
 			</p>
 			<p className="text-sm text-muted-foreground">
 				Then you go back to{" "}
-				<span className="font-medium text-foreground">{destination(search.redirect_uri)}</span>. Any
-				app can give itself any name, so only allow this if you just connected {clientName}{" "}
+				<span className="font-medium text-foreground">
+					{redirectDestination(search.redirect_uri)}
+				</span>
+				. Any app can give itself any name, so only allow this if you just connected {clientName}{" "}
 				yourself.
 			</p>
 			<div className="space-y-2">
@@ -96,20 +98,6 @@ function ConsentPage() {
 			</div>
 		</Card>
 	);
-}
-
-/** Where the grant goes, in terms a person can check. */
-function destination(redirectUri: string | undefined): string {
-	if (!redirectUri) return "the app";
-	try {
-		const url = new URL(redirectUri);
-		if (["localhost", "127.0.0.1", "[::1]"].includes(url.hostname)) {
-			return "an app on this computer";
-		}
-		return url.protocol === "https:" || url.protocol === "http:" ? url.host : url.protocol;
-	} catch {
-		return "the app";
-	}
 }
 
 function Card({ title, children }: { title: string; children: ReactNode }) {

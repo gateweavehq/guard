@@ -28,8 +28,9 @@ One Worker (`apps/web`), the same shape as Gateweave Track, Gateweave Agents and
   `wrangler.jsonc` (`apps/web/src/server/db/prune.ts`). Better Auth removes a session or a
   verification only when something looks it up, so those nobody comes back for would otherwise
   stay, with the address and browser a session holds, an assistant's expired tokens with the person
-  who approved them, and invitations with the address they were sent to. The privacy policy states
-  these, so a change there is a change to it.
+  who approved them, and invitations with the address they were sent to. It also removes apps that
+  registered themselves and were never allowed (see "MCP"). The privacy policy states the rest, so a
+  change there is a change to it.
 - **Security headers** go on every answer, and a page also gets a policy that names its scripts by
   a nonce of that response (`security-headers.ts`). Nothing is framed and no host is allowed by
   default; a member's picture may come from GitHub or the sign-in provider's own host.
@@ -404,6 +405,26 @@ client and signs in in the browser. There is no key to copy.
   production), issuer, audience (the resource), expiry, `azp`, the `guard` scope, and DPoP binding
   where a token has one. A failure is a 401 with `WWW-Authenticate` and the protected-resource
   metadata, as MCP clients expect.
+- **A person sees what they allowed, and takes it back** (Settings, AI assistant, `grants.ts` and
+  `grants-gateway.ts`). Grants belong to the person, not to a workspace, so the list is the same in
+  all of theirs and every role sees it. One row per app with a consent: the name it gave itself
+  (marked as such, since any app can call itself anything), where it goes (the consent page's
+  words, `redirectDestination`), when it was allowed, and when it last refreshed its access, which
+  is the newest `rotated_at` among its refresh tokens (a refresh rotates the old token), so it is
+  at most an hour behind and empty for an app that never came back. No token or token id is read.
+  "Take back" (`POST /api/assistants`, Origin checked, the person from the session) deletes that
+  person's refresh tokens, access tokens and consent for the app in one D1 batch. Someone else's
+  grant to the same app stays, and an app the person never allowed answers the same "not found" as
+  one that does not exist. Better Auth's own routes for this stay closed.
+- **A grant is checked on every call.** An access token is a signed JWT that is good for an hour
+  whatever happens in D1, so after verifying it `/mcp` reads `oauth_consent` for the token's
+  person and app and requires the `guard` scope. That read runs together with the rate limit, not
+  after it, and uses `oauthConsent_userId_idx` (a person has a handful of consents, so no index on
+  `(user_id, client_id)` was added). A missing grant is answered as an invalid token, so the client
+  asks the person again. The refresh token is gone too, so a refresh is refused as well.
+- **Apps nobody allowed are pruned.** Anyone can register a client, so the daily run deletes those
+  registered without a user, more than a day old, with no consent and no unexpired refresh token.
+  Their `oauth_client_resource` rows go with them. A client someone allows is never touched.
 - **Session cookies are never accepted at `/mcp`.** A page cannot make a signed-in browser call it,
   and the endpoint reads only the `Authorization` header.
 - **A token acts as the person who approved it,** in every workspace they belong to. Every tool

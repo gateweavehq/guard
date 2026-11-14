@@ -74,6 +74,45 @@ describe("the daily cron", () => {
 		expect(await has("invitation", "live-invitation")).toBe(true);
 	});
 
+	it("deletes a day-old app nobody allowed, and keeps one someone allowed or one just registered", async () => {
+		const DAY = 24 * HOUR;
+		const client = (id: string, createdAt: number) =>
+			guard.db
+				.prepare(
+					"INSERT INTO oauth_client (id, client_id, redirect_uris, created_at, updated_at) VALUES (?1, ?1, '[]', ?2, ?2)",
+				)
+				.bind(id, createdAt);
+		await guard.db.batch([
+			client("app-never-allowed", Date.now() - 2 * DAY),
+			client("app-allowed", Date.now() - 2 * DAY),
+			client("app-refreshing", Date.now() - 2 * DAY),
+			client("app-fresh", Date.now() - HOUR),
+			guard.db.prepare(
+				"INSERT OR IGNORE INTO oauth_resource (id, identifier, name) VALUES ('res', 'https://guard.test/mcp', 'mcp')",
+			),
+			guard.db.prepare(
+				"INSERT INTO oauth_client_resource (id, client_id, resource_id) VALUES ('link-gone', 'app-never-allowed', 'https://guard.test/mcp')",
+			),
+			guard.db
+				.prepare(
+					"INSERT INTO oauth_consent (id, client_id, user_id, scopes, created_at, updated_at) VALUES ('consent-kept', 'app-allowed', 'someone', '[\"guard\"]', ?1, ?1)",
+				)
+				.bind(Date.now()),
+			guard.db
+				.prepare(
+					"INSERT INTO oauth_refresh_token (id, token, client_id, user_id, scopes, expires_at, created_at) VALUES ('refresh-kept', 't', 'app-refreshing', 'someone', '[]', ?1, ?2)",
+				)
+				.bind(future(), Date.now()),
+		]);
+		await guard.runScheduled();
+		expect(await has("oauth_client", "app-never-allowed")).toBe(false);
+		expect(await has("oauth_client_resource", "link-gone")).toBe(false);
+		expect(await has("oauth_client", "app-allowed")).toBe(true);
+		expect(await has("oauth_consent", "consent-kept")).toBe(true);
+		expect(await has("oauth_client", "app-refreshing")).toBe(true);
+		expect(await has("oauth_client", "app-fresh")).toBe(true);
+	});
+
 	it("leaves a person and their workspace alone", async () => {
 		await guard.runScheduled();
 		expect(await has("user", "someone")).toBe(true);

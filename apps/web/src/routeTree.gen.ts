@@ -21,6 +21,7 @@ import { Route as WorkspaceProtectionRouteImport } from './routes/$workspace/pro
 import { Route as WorkspaceServerRouteImport } from './routes/$workspace/server'
 import { Route as WorkspaceSettingsRouteImport } from './routes/$workspace/settings'
 import { Route as WorkspaceTrafficRouteImport } from './routes/$workspace/traffic'
+import { Route as ApiAssistantsRouteImport } from './routes/api/assistants'
 import { Route as InviteInvitationIdRouteImport } from './routes/invite.$invitationId'
 import { Route as OauthConsentRouteImport } from './routes/oauth.consent'
 import { Route as SettingsAccountRouteImport } from './routes/settings.account'
@@ -99,6 +100,11 @@ const WorkspaceTrafficRoute = WorkspaceTrafficRouteImport.update({
   id: '/traffic',
   path: '/traffic',
   getParentRoute: () => WorkspaceRoute,
+} as any)
+const ApiAssistantsRoute = ApiAssistantsRouteImport.update({
+  id: '/api/assistants',
+  path: '/api/assistants',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const InviteInvitationIdRoute = InviteInvitationIdRouteImport.update({
   id: '/invite/$invitationId',
@@ -208,6 +214,7 @@ export interface FileRoutesByFullPath {
   '/$workspace/server': typeof WorkspaceServerRoute
   '/$workspace/settings': typeof WorkspaceSettingsRouteWithChildren
   '/$workspace/traffic': typeof WorkspaceTrafficRoute
+  '/api/assistants': typeof ApiAssistantsRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/settings/account': typeof SettingsAccountRoute
@@ -238,6 +245,7 @@ export interface FileRoutesByTo {
   '/$workspace/protection': typeof WorkspaceProtectionRoute
   '/$workspace/server': typeof WorkspaceServerRoute
   '/$workspace/traffic': typeof WorkspaceTrafficRoute
+  '/api/assistants': typeof ApiAssistantsRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/settings/account': typeof SettingsAccountRoute
@@ -271,6 +279,7 @@ export interface FileRoutesById {
   '/$workspace/server': typeof WorkspaceServerRoute
   '/$workspace/settings': typeof WorkspaceSettingsRouteWithChildren
   '/$workspace/traffic': typeof WorkspaceTrafficRoute
+  '/api/assistants': typeof ApiAssistantsRoute
   '/invite/$invitationId': typeof InviteInvitationIdRoute
   '/oauth/consent': typeof OauthConsentRoute
   '/settings/account': typeof SettingsAccountRoute
@@ -305,6 +314,7 @@ export interface FileRouteTypes {
     | '/$workspace/server'
     | '/$workspace/settings'
     | '/$workspace/traffic'
+    | '/api/assistants'
     | '/invite/$invitationId'
     | '/oauth/consent'
     | '/settings/account'
@@ -335,6 +345,7 @@ export interface FileRouteTypes {
     | '/$workspace/protection'
     | '/$workspace/server'
     | '/$workspace/traffic'
+    | '/api/assistants'
     | '/invite/$invitationId'
     | '/oauth/consent'
     | '/settings/account'
@@ -367,6 +378,7 @@ export interface FileRouteTypes {
     | '/$workspace/server'
     | '/$workspace/settings'
     | '/$workspace/traffic'
+    | '/api/assistants'
     | '/invite/$invitationId'
     | '/oauth/consent'
     | '/settings/account'
@@ -394,6 +406,7 @@ export interface RootRouteChildren {
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
+  ApiAssistantsRoute: typeof ApiAssistantsRoute
   InviteInvitationIdRoute: typeof InviteInvitationIdRoute
   OauthConsentRoute: typeof OauthConsentRoute
   SettingsAccountRoute: typeof SettingsAccountRoute
@@ -492,6 +505,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/$workspace/traffic'
       preLoaderRoute: typeof WorkspaceTrafficRouteImport
       parentRoute: typeof WorkspaceRoute
+    }
+    '/api/assistants': {
+      id: '/api/assistants'
+      path: '/api/assistants'
+      fullPath: '/api/assistants'
+      preLoaderRoute: typeof ApiAssistantsRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/invite/$invitationId': {
       id: '/invite/$invitationId'
@@ -684,6 +704,7 @@ const rootRouteChildren: RootRouteChildren = {
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
   ResetPasswordRoute: ResetPasswordRoute,
+  ApiAssistantsRoute: ApiAssistantsRoute,
   InviteInvitationIdRoute: InviteInvitationIdRoute,
   OauthConsentRoute: OauthConsentRoute,
   SettingsAccountRoute: SettingsAccountRoute,

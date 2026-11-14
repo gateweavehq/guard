@@ -177,7 +177,12 @@ async function assistantFor(person: Person) {
 	await transport().finishAuth(callback.searchParams);
 	expect(provider.savedTokens?.scope).toContain("guard");
 	await client.connect(transport());
-	return { client, token: provider.savedTokens?.access_token ?? "" };
+	return {
+		client,
+		token: provider.savedTokens?.access_token ?? "",
+		refreshToken: provider.savedTokens?.refresh_token ?? "",
+		clientId: provider.client?.client_id ?? "",
+	};
 }
 
 /** What a tool answered, as text, to look through. */
@@ -805,6 +810,219 @@ describe("how often an assistant may call", () => {
 		} finally {
 			await noisy.client.close();
 			await calm.client.close();
+		}
+	});
+});
+
+describe("the assistants a person allowed", () => {
+	type Listed = {
+		clientId: string;
+		name: string | null;
+		destination: string;
+		allowedAt: number;
+		lastUsedAt: number | null;
+	};
+
+	const listFor = async (person: Person) => {
+		const response = await world.guard.fetch(`${origin}/api/assistants`, {
+			headers: { cookie: person.headers.cookie },
+		});
+		expect(response.status).toBe(200);
+		const text = await response.text();
+		return { grants: (JSON.parse(text) as { grants: Listed[] }).grants, text };
+	};
+
+	const takeBack = (person: Person, clientId: string) =>
+		world.guard.fetch(`${origin}/api/assistants`, {
+			method: "POST",
+			headers: { "content-type": "application/json", origin, cookie: person.headers.cookie },
+			body: JSON.stringify({ clientId }),
+		});
+
+	const ping = (token: string) =>
+		world.guard.fetch(`${origin}/mcp`, {
+			method: "POST",
+			headers: {
+				"content-type": "application/json",
+				accept: "application/json, text/event-stream",
+				authorization: `Bearer ${token}`,
+			},
+			body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+		});
+
+	const refresh = (clientId: string, refreshToken: string) =>
+		fromAnAddress()(`${origin}/api/auth/oauth2/token`, {
+			method: "POST",
+			headers: { "content-type": "application/x-www-form-urlencoded", origin },
+			body: new URLSearchParams({
+				grant_type: "refresh_token",
+				refresh_token: refreshToken,
+				client_id: clientId,
+				resource: `${origin}/mcp`,
+			}),
+		});
+
+	/** Lets a second person allow an app that already exists, by its client id, as a second browser would. */
+	async function allowAlso(person: Person, clientId: string) {
+		const send = fromAnAddress();
+		const verifier = randomBytes(32).toString("base64url");
+		const authorize = new URL(`${origin}/api/auth/oauth2/authorize`);
+		for (const [key, value] of Object.entries({
+			response_type: "code",
+			client_id: clientId,
+			redirect_uri: redirectUrl,
+			scope: "openid guard offline_access",
+			state: "s",
+			resource: `${origin}/mcp`,
+			code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+			code_challenge_method: "S256",
+		})) {
+			authorize.searchParams.set(key, value);
+		}
+		const toConsent = await send(authorize, { headers: { cookie: person.headers.cookie } });
+		const consent = new URL(((await toConsent.json()) as { url: string }).url, origin);
+		expect(consent.pathname).toBe("/oauth/consent");
+		const decision = await authApi("/oauth2/consent", person, {
+			accept: true,
+			oauth_query: consent.search.slice(1),
+		});
+		const callback = new URL(((await decision.json()) as { url: string }).url);
+		const token = await send(`${origin}/api/auth/oauth2/token`, {
+			method: "POST",
+			headers: { "content-type": "application/x-www-form-urlencoded", origin },
+			body: new URLSearchParams({
+				grant_type: "authorization_code",
+				code: callback.searchParams.get("code") ?? "",
+				redirect_uri: redirectUrl,
+				client_id: clientId,
+				code_verifier: verifier,
+				resource: `${origin}/mcp`,
+			}),
+		});
+		return (await token.json()) as { access_token: string; refresh_token: string };
+	}
+
+	it("lists an app with the name it gave, where it goes and when it was allowed, never used until it refreshes", async () => {
+		const person = await world.stranger("gail");
+		const before = Date.now();
+		const assistant = await assistantFor(person);
+		try {
+			const { grants, text } = await listFor(person);
+			expect(grants).toEqual([
+				{
+					clientId: assistant.clientId,
+					name: "Guard integration test",
+					destination: "an app on this computer",
+					allowedAt: expect.any(Number),
+					lastUsedAt: null,
+				},
+			]);
+			expect(grants[0]?.allowedAt).toBeGreaterThanOrEqual(before - 1000);
+			// Nothing the app holds is in the answer.
+			expect(text).not.toContain(assistant.token);
+			expect(text).not.toContain(assistant.refreshToken);
+
+			const refreshed = await refresh(assistant.clientId, assistant.refreshToken);
+			expect(refreshed.status).toBe(200);
+			const issued = (await refreshed.json()) as { access_token: string; refresh_token: string };
+			const after = await listFor(person);
+			expect(after.grants[0]?.lastUsedAt).toBeGreaterThanOrEqual(before - 1000);
+			for (const secret of [
+				assistant.token,
+				assistant.refreshToken,
+				issued.access_token,
+				issued.refresh_token,
+			]) {
+				expect(after.text).not.toContain(secret);
+			}
+		} finally {
+			await assistant.client.close();
+		}
+	});
+
+	it("lists nothing for someone who is not signed in, and nothing of anyone else's", async () => {
+		const signedOut = await world.guard.fetch(`${origin}/api/assistants`);
+		expect(signedOut.status).toBe(401);
+		const nobody = await world.stranger("hal");
+		expect((await listFor(nobody)).grants).toEqual([]);
+	});
+
+	it("ends access at once: the token still in date, the refresh and the list, and spares the rest", async () => {
+		const person = await world.stranger("ida");
+		const other = await world.stranger("jon");
+		const doomed = await assistantFor(person);
+		const kept = await assistantFor(person);
+		const sameApp = await allowAlso(other, doomed.clientId);
+		try {
+			expect((await ping(doomed.token)).status).toBe(200);
+			expect((await listFor(person)).grants).toHaveLength(2);
+
+			const response = await takeBack(person, doomed.clientId);
+			expect(response.status).toBe(200);
+
+			// Its access token is a signed JWT with most of its hour left, and is turned away anyway.
+			const refused = await ping(doomed.token);
+			expect(refused.status).toBe(401);
+			// Word for word what a token that is not valid gets, so a client asks the person again.
+			const invalid = await ping("not.a.token");
+			expect(refused.headers.get("www-authenticate")).toBe(invalid.headers.get("www-authenticate"));
+			expect(refused.headers.get("www-authenticate")).toContain("resource_metadata=");
+			expect(await refused.json()).toEqual(await invalid.json());
+			const refreshed = await refresh(doomed.clientId, doomed.refreshToken);
+			expect(refreshed.status).toBeGreaterThanOrEqual(400);
+
+			expect((await listFor(person)).grants.map((one) => one.clientId)).toEqual([kept.clientId]);
+			// Another app of theirs, and another person who allowed the very same app, carry on.
+			expect((await ping(kept.token)).status).toBe(200);
+			expect((await ping(sameApp.access_token)).status).toBe(200);
+			expect((await refresh(doomed.clientId, sameApp.refresh_token)).status).toBe(200);
+			expect((await listFor(other)).grants.map((one) => one.clientId)).toEqual([doomed.clientId]);
+
+			// Asking again shows the consent page, as a new app would, and works once allowed.
+			const again = await allowAlso(person, doomed.clientId);
+			expect((await ping(again.access_token)).status).toBe(200);
+		} finally {
+			await doomed.client.close();
+			await kept.client.close();
+		}
+	});
+
+	it("answers not found for someone else's grant or an app that does not exist, and deletes nothing", async () => {
+		const owner = await world.stranger("kim");
+		const intruder = await world.stranger("lee");
+		const assistant = await assistantFor(owner);
+		try {
+			for (const clientId of [assistant.clientId, "no-such-client"]) {
+				const response = await takeBack(intruder, clientId);
+				expect(response.status).toBe(404);
+				expect(await response.json()).toEqual({ ok: false, error: "Not found" });
+			}
+			expect((await listFor(owner)).grants).toHaveLength(1);
+			expect((await ping(assistant.token)).status).toBe(200);
+			expect((await refresh(assistant.clientId, assistant.refreshToken)).status).toBe(200);
+		} finally {
+			await assistant.client.close();
+		}
+	});
+
+	it("takes back only from the app's own pages, and only for someone signed in", async () => {
+		const person = await world.stranger("nina");
+		const assistant = await assistantFor(person);
+		try {
+			const send = (headers: Record<string, string>) =>
+				world.guard.fetch(`${origin}/api/assistants`, {
+					method: "POST",
+					headers: { "content-type": "application/json", ...headers },
+					body: JSON.stringify({ clientId: assistant.clientId }),
+				});
+			expect((await send({ cookie: person.headers.cookie })).status).toBe(403);
+			expect(
+				(await send({ cookie: person.headers.cookie, origin: "https://evil.test" })).status,
+			).toBe(403);
+			expect((await send({ origin })).status).toBe(401);
+			expect((await listFor(person)).grants).toHaveLength(1);
+		} finally {
+			await assistant.client.close();
 		}
 	});
 });

@@ -24,7 +24,15 @@ export interface ProtectedResourceOptions {
 	dpopReplayStore: DpopReplayStore;
 }
 
-export type ProtectedHandler = (request: Request, claims: JWTPayload) => Promise<Response>;
+/**
+ * `reject` answers as for an invalid token, for a handler that finds out later that the token
+ * should not be honored (its grant was taken back).
+ */
+export type ProtectedHandler = (
+	request: Request,
+	claims: JWTPayload,
+	reject: () => Response,
+) => Promise<Response>;
 
 /**
  * Lets through only requests with a valid access token for `resource`, and answers the rest with
@@ -94,7 +102,7 @@ export function protectResource(
 		} catch (error) {
 			return challenge(error, options);
 		}
-		return handler(request, claims);
+		return handler(request, claims, () => challenge(unauthorized("invalid access token"), options));
 	};
 }
 

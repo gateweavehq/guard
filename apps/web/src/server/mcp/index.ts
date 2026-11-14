@@ -8,6 +8,7 @@ import { connectionRefs, scanNow } from "../connections/gateway";
 import { trafficActionsOf, trafficOf } from "../connections/traffic-gateway";
 import { allowMcpCall } from "../rate-limit";
 import { findMembership, listWorkspaces } from "../workspaces";
+import { grantExists } from "./grants";
 import { protectResource } from "./protect";
 import { createGuardServer, type GuardAccess, type WorkspaceAccess } from "./tools";
 
@@ -42,13 +43,20 @@ function protect(resource: string) {
 		return createGuardServer(accessFor(userId));
 	});
 
-	const serve = async (request: Request, claims: JWTPayload) => {
+	const serve = async (request: Request, claims: JWTPayload, reject: () => Response) => {
 		const clientId = typeof claims.azp === "string" ? claims.azp : claims.client_id;
 		const userId = claims.sub;
 		if (typeof userId !== "string" || typeof clientId !== "string") {
 			return Response.json({ error: "Not found" }, { status: 404 });
 		}
-		const { allowed, retryAfter } = await allowMcpCall(userId, clientId);
+		// A token is a signed JWT that stays good for an hour whatever happens in D1, so what the
+		// person can take back is checked here, in the same round trip as the rate limit.
+		const [{ allowed, retryAfter }, granted] = await Promise.all([
+			allowMcpCall(userId, clientId),
+			grantExists(db.$client, userId, clientId, MCP_SCOPE),
+		]);
+		// As for an invalid token, so the assistant goes back to asking the person.
+		if (!granted) return reject();
 		if (!allowed) {
 			return Response.json(
 				{
