@@ -19,7 +19,7 @@ command line.
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/gateweavehq/guard)
 
-The repository is private until its first release, so the button works once it is public. It copies
+It copies
 the repository to your GitHub or GitLab account and connects the copy to Workers Builds, so every
 push to its main branch deploys. On the form:
 
