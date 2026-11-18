@@ -358,13 +358,31 @@ scheduled run that failed for the same reason has such a line too. See
 
 ## Updating
 
+**Command line:**
+
 ```sh
 git pull
 pnpm install
 pnpm run deploy
 ```
 
-The deploy applies new D1 migrations before the new code goes live. A copy made with the button
-shares no history with this repository, so `git pull` refuses there: a way to bring such a copy up
-to a release is planned and not built yet. Guard is in early development. Read
-[CHANGELOG.md](../CHANGELOG.md) before updating, as some releases change how things work.
+The deploy applies new D1 migrations before the new code goes live.
+
+**Button:** a copy made with the button has no history in common with this repository, so `git pull`
+refuses. To bring it to the latest release, run these commands from the copy:
+
+```sh
+git remote add upstream https://github.com/gateweavehq/guard.git   # once
+git fetch upstream
+git show upstream/main:scripts/update-copy.mjs | node --input-type=module
+git push
+```
+
+The script makes one local commit and pushes nothing. It keeps the copy's Worker and database
+bindings; if a release conflicts with changes in the copy, it stops for review. The push triggers
+Workers Builds, which applies migrations before deploying. To undo before pushing, run
+`git reset --hard HEAD~1`. To choose an older release, end the third command with
+`node --input-type=module - --to v1.2.3`.
+
+Guard is in early development. Read [CHANGELOG.md](../CHANGELOG.md) before updating, as some
+releases change how things work.
