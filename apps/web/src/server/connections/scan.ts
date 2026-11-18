@@ -39,6 +39,22 @@ export interface ScanResult {
 	resolved: number;
 }
 
+/**
+ * What came of asking for a scan. `held` is a connection nothing was read from: another scan has
+ * it, it is gone, or it is not due for the hourly run. `unrecorded` is a scan that ran and whose
+ * result could not be written, which is not the same thing to whoever asked.
+ */
+export type ScanRun =
+	| { state: "recorded"; result: ScanResult }
+	| { state: "held" }
+	| { state: "unrecorded" };
+
+/**
+ * What a connection's `last_scan_outcome` says after a scan that could not be written. No row of
+ * `scan` has it: the row is part of what was not written.
+ */
+export const UNRECORDED = "unrecorded";
+
 const HOUR = 60 * 60 * 1000;
 /** A connection is scanned this often. */
 export const SCAN_EVERY_MS = 24 * HOUR;
@@ -178,21 +194,26 @@ interface Known {
 }
 
 /**
- * Scans one connection and records what it found, or why it could not. Returns null when another
+ * Scans one connection and records what it found, or why it could not. It is `held` when another
  * scan holds the connection (or the connection is gone, or not due for the hourly run).
  *
  * A scan that fails changes no findings, and says on the connection what failed. A scan that
  * succeeds writes every change in one D1 batch: findings seen are added, updated and reopened,
  * findings no longer seen are resolved, and a finding an admin dismissed stays dismissed.
+ *
+ * A scan whose batch fails is `unrecorded`. The connection is then told so in one small statement
+ * of its own, and waits: an hour the first time, since most failures of D1 pass, and a day once
+ * the scan before it went the same way. Left due, such a connection was read every hour for
+ * nothing, and came first in every hourly run, ahead of the ones that could be scanned.
  */
 export async function runScan(
 	deps: ScanDeps,
 	connectionId: string,
 	{ onlyDue = false, now = Date.now() }: { onlyDue?: boolean; now?: number } = {},
-): Promise<ScanResult | null> {
+): Promise<ScanRun> {
 	const { db } = deps;
 	const connection = await claim(db, connectionId, now, onlyDue);
-	if (!connection) return null;
+	if (!connection) return { state: "held" };
 
 	let seen: Seen | null = null;
 	let failure: ScanOutcome | null = null;
@@ -214,29 +235,38 @@ export async function runScan(
 
 	try {
 		if (seen === null) {
-			return await record(db, connection, now, {
+			const result = await record(db, connection, now, {
 				outcome: failure ?? "invalid_response",
 				found: 0,
 				added: 0,
 				resolved: 0,
 			});
+			return { state: "recorded", result };
 		}
-		return await apply(
+		const result = await apply(
 			db,
 			connection,
 			await withProtection(db, await withTraffic(db, connection, seen)),
 			now,
 		);
+		return { state: "recorded", result };
 	} catch (error) {
 		// The connection may have been removed while this scan ran, or D1 failed. Either way
 		// nothing was written, since each is one batch.
 		console.error(`scan: could not record ${error instanceof Error ? error.name : "failure"}`);
+		// If this fails as well, the connection stays taken until the lease runs out and is due
+		// after it, as before: there is nowhere left to say so.
 		await db.$client
-			.prepare("UPDATE connection SET scan_started_at = NULL WHERE id = ?1")
-			.bind(connection.id)
+			.prepare(
+				`UPDATE connection SET scan_started_at = NULL, last_scan_at = ?1,
+					next_scan_at = ?1 + CASE WHEN last_scan_outcome = ?2 THEN ?3 ELSE ?4 END,
+					last_scan_outcome = ?2
+				WHERE id = ?5`,
+			)
+			.bind(Date.now(), UNRECORDED, SCAN_EVERY_MS, RETRY_AFTER_FAILURE_MS, connection.id)
 			.run()
 			.catch(() => undefined);
-		return null;
+		return { state: "unrecorded" };
 	}
 }
 
@@ -462,10 +492,10 @@ export async function scanDue(
 	let scanned = 0;
 	let failed = 0;
 	for (const { id } of results) {
-		const result = await runScan(deps, id, { onlyDue: true, now });
-		if (!result) continue;
+		const run = await runScan(deps, id, { onlyDue: true, now });
+		if (run.state !== "recorded") continue;
 		scanned++;
-		if (result.outcome !== "ok") failed++;
+		if (run.result.outcome !== "ok") failed++;
 	}
 	return { scanned, failed };
 }

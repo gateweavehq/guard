@@ -56,6 +56,8 @@ const TEXT = {
 		invalid_response: "The service answered in a way Guard does not understand.",
 		unreadable:
 			"Needs attention: Guard can no longer open the stored token, as when the server's SECRETS_KEY was replaced.",
+		unrecorded:
+			"The last scan ran, but what it found could not be saved. Guard tries again within the hour, and once a day if that fails too.",
 	} satisfies Record<string, string>,
 	fix: {
 		cloudflare:
@@ -82,6 +84,8 @@ const TEXT = {
 	scanDone: (found: string, added: string, resolved: string) =>
 		`Scan done: ${found} found, ${added} new, ${resolved} closed.`,
 	scanFailed: "The scan did not work. See the connection for why.",
+	firstScanUnrecorded:
+		"Its scan ran, but what it found could not be saved. Guard tries again within the hour.",
 	cancel: "Cancel",
 	cloudflare: {
 		heading: "Connect a Cloudflare account",
@@ -404,6 +408,7 @@ function TokenForm({
 		// The token has been sealed; nothing of it stays in the page.
 		setToken("");
 		toast.success(successMessage);
+		if (result.scanState === "unrecorded") toast.error(TEXT.firstScanUnrecorded);
 		await router.invalidate();
 		onDone();
 	}

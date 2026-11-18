@@ -328,7 +328,7 @@ describe("Guard's own statements", () => {
 		expect(state.sent[0]).toMatch(/^UPDATE connection SET scan_started_at = [\s\S]*\sRETURNING /);
 		expect(warned).not.toHaveBeenCalled();
 		// Asked again, it answers: there is no such connection to take.
-		expect(await runScan({ db, settings: {} }, "no-such-connection")).toBeNull();
+		expect(await runScan({ db, settings: {} }, "no-such-connection")).toEqual({ state: "held" });
 	});
 
 	it("sends once a delete that returns its rows, as removing a connection does", async () => {

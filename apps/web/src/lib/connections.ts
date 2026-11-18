@@ -4,6 +4,7 @@ import {
 	type ConnectionActionInput,
 	type FindingActionInput,
 	FindingFilters,
+	type ScanState,
 	type ScanSummary,
 } from "./connection-schemas";
 import type { TrackLinkView } from "./track-schemas";
@@ -58,7 +59,7 @@ async function post<T>(url: string, body: unknown): Promise<Answer<T>> {
 }
 
 export function changeConnections(slug: string, action: ConnectionActionInput) {
-	return post<{ scan?: ScanSummary | null }>(
+	return post<{ scan?: ScanSummary | null; scanState?: ScanState }>(
 		`/api/connections/${encodeURIComponent(slug)}`,
 		action,
 	);

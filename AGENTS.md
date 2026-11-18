@@ -128,8 +128,10 @@ These are load-bearing. Breaking one breaks users' data or security, usually sil
     values are bound: no `sql.raw` and no hand-written statement with anything in its text but the
     code's own words, and nothing reaches `env.DB` but through `createDb`. Never read a database
     error's message to decide an answer, and never show or log Drizzle's own error or D1's. An
-    answer that depends on a trigger having refused asks `refusedBy`, and a trigger that refuses
-    with new words is added to `REFUSALS`, both in `apps/web/src/server/db/query-failure.ts`.
+    answer that depends on a trigger having refused asks `refusedBy`, one that depends on a
+    unique index asks `refusedByUnique`, and a trigger that refuses with new words is added to
+    `REFUSALS`, all in `apps/web/src/server/db/query-failure.ts`. A failure that is neither is
+    never answered as if it were.
 
 ## Code style
 

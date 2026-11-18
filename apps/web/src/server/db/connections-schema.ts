@@ -66,7 +66,10 @@ export const connection = sqliteTable(
 		addedBy: text("added_by").notNull(),
 		addedAt: integer("added_at", { mode: "timestamp_ms" }).notNull(),
 		lastScanAt: integer("last_scan_at", { mode: "timestamp_ms" }),
-		/** `ok`, a failure kind of `UpstreamFailure`, or `unreadable` for a token that does not open. */
+		/**
+		 * `ok`, a failure kind of `UpstreamFailure`, `unreadable` for a token that does not open, or
+		 * `unrecorded` for a scan whose result could not be written (`UNRECORDED` in `scan.ts`).
+		 */
 		lastScanOutcome: text("last_scan_outcome"),
 		nextScanAt: integer("next_scan_at", { mode: "timestamp_ms" }).notNull(),
 		/** Set while a scan runs, so that one connection is never scanned twice at once. */

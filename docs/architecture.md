@@ -99,7 +99,8 @@ Findings screens, and the schemas both agree on are in `apps/web/src/lib/connect
   changes no finding, and records its kind on the connection (`unauthorized`, `forbidden` and
   `not_found` mean it needs attention, and the page says what to fix; `rate_limited` and
   `unavailable` are tried again within the hour; `unreadable` means the stored token no longer
-  opens). The last 30 scans of a connection are kept, with how many problems were found, new and
+  opens; `unrecorded` is a scan that ran and whose result could not be written, see "When a query
+  of D1 fails"). The last 30 scans of a connection are kept, with how many problems were found, new and
   closed.
 - **Findings hold what a page shows and nothing of what was read:** the severity, a kind (the
   insight's class, or the advisory's id), the subject (hostname or zone, or `package@versions in
@@ -526,17 +527,30 @@ object, with no network between a query and its answer.
   asks the failure's kind now (`refusedBy`), which names a trigger's refusal only where D1 put
   SQLite's words right after its code, so the list is called full exactly when the trigger
   refused. Counting the list again would not do: an insert that was written while its answer was
-  lost can leave the list full with the entry on it. Connecting an account catches whatever its
-  insert throws and says the account is connected already or the workspace full, without reading
-  it. So the answers are what they were.
+  lost can leave the list full with the entry on it. Connecting an account asks the kind too: it
+  says the account is connected already only when the unique index on the target (or on a
+  repository's id) refused (`refusedByUnique`, which names the index's columns), and that the
+  workspace is full only when the trigger did. Any other failure of that insert is thrown as it
+  came. It once answered "already connected, or this workspace is full" for whatever the insert
+  threw, an outage included.
   The error's cause is an error that says the kind only, which Better Auth's oauth-provider reads
   to tell a database not migrated yet (`no such table`) from a real failure when it seeds
   `oauth_resource`.
-- **A scan that cannot write records nothing and lets its connection go.** Everything a scan
-  writes is one batch, sent once, so a failure leaves the findings as they were. The scan logs
-  `scan: could not record DatabaseError` beside the `d1:` line, clears `scan_started_at`, and
-  leaves `next_scan_at` alone, so the next hour scans the connection again. What it found is the
-  batch's values and is in neither line. A failed read of the stored traffic or protection only
+- **A scan that cannot write records nothing, says so on its connection and backs off.**
+  Everything a scan writes is one batch, sent once, so a failure leaves the findings as they were.
+  The scan logs `scan: could not record DatabaseError` beside the `d1:` line. Then one small
+  statement of its own clears `scan_started_at`, sets `last_scan_outcome` to `unrecorded`, which
+  the Connections page puts into words, and moves `next_scan_at`: an hour ahead the first time,
+  since most failures of D1 pass, and a day ahead when the scan before it was `unrecorded` too.
+  Left due, such a connection was read every hour for nothing and came first in every hourly run,
+  so ten of them took a run's ten places from the rest. No row of `scan` is written for it. If
+  that statement fails as well, the connection is as a scan that died leaves it: taken until the
+  lease runs out, and due. `runScan` tells such a scan (`unrecorded`) from a connection nothing
+  was read from (`held`), so "Scan now" and an assistant's `start_scan` say that the scan ran and
+  could not be saved, where they once said that a scan was already running; the allowance of
+  "Scan now" stays spent, since the account or repository was read. Connecting and replacing a
+  token answer with `scanState` beside `scan`, for the same reason. What it found is the batch's
+  values and is in neither line. A failed read of the stored traffic or protection only
   leaves that part unjudged, as an upstream's failure does. The hourly run's own first read, and
   the daily run's deletes, fail the run, which the runtime records by the error's message.
 - **A page shows no error's message.** `RouteError` says that the page could not be loaded, and

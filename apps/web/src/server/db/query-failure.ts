@@ -76,6 +76,19 @@ export function refusedBy(error: unknown, refusal: (typeof REFUSALS)[number]): b
 }
 
 /**
+ * Whether a unique index refused the write, by the columns it is on as the schema names them
+ * (`connection.organization_id`, …), in the index's order. It asks the kind as `refusedBy` does,
+ * and for the same reason: the kind names a constraint only where D1 put SQLite's words right
+ * after its code, and of those words only names, so nothing a row held can pass for it.
+ */
+export function refusedByUnique(error: unknown, ...columns: string[]): boolean {
+	return (
+		error instanceof DatabaseError &&
+		error.kind.endsWith(`, UNIQUE constraint failed: ${columns.join(", ")}`)
+	);
+}
+
+/**
  * What SQLite may be quoted on: a constraint or a missing table or column, and the names it gives,
  * which are the schema's, and a trigger's refusal. Only where D1 puts SQLite's words, right after
  * its own code, and only up to the next colon or the end: the same words further in may be what a

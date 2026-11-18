@@ -9,7 +9,7 @@ import {
 } from "@modelcontextprotocol/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { HOURLY, origin, startWorld, type World } from "./connections-world";
-import { ACCOUNT_ID } from "./upstreams";
+import { ACCOUNT_ID, OTHER_ACCOUNT_ID } from "./upstreams";
 
 // A query of D1 that failed for good, in the Worker as it deploys. Drizzle's error for it is
 // `Failed query: select … params: …`, with every value the statement was given. A page whose read
@@ -22,6 +22,10 @@ import { ACCOUNT_ID } from "./upstreams";
 // Tokens whose last four characters (the hint a page shows) are easy to look for.
 const CF_TOKEN = "cf-token-77-abcdefghijklmnopqrQ7Zk";
 const NEW_TOKEN = "cf-token-78-abcdefghijklmnopqrW9Xy";
+const OTHER_TOKEN = "cf-token-79-abcdefghijklmnopqrJ4Hn";
+// How long a connection waits for its next scan: a day, and an hour after a failure that passes.
+const HOUR = 60 * 60 * 1000;
+const DAY = 24 * HOUR;
 // What a scan takes from the account, which is the workspace's own business.
 const SUBJECT = "zone-nobody-should-log.example";
 // Never called: the test reads the code from where consent sends the browser.
@@ -32,6 +36,8 @@ const SEALED = /v2\.[\w-]+\.[\w-]+\.[\w-]+/;
 
 let world: World;
 let connectionId: string;
+/** A second account's connection, made by the test that connects it. */
+let otherConnectionId: string;
 /** The stand-in Cloudflare account, whose token a test changes as its owner would. */
 let account: { token: string };
 
@@ -361,8 +367,8 @@ describe("a connection's token", () => {
 		expect(after?.token_hint).toBe("Q7Zk");
 	});
 
-	// The one place that catches a failed write to tell a person something: it reads nothing of
-	// the error, so the answer is what it was.
+	// The one place that catches a failed write to tell a person something. It asks the failure's
+	// kind whether the unique index refused, and says so only then.
 	it("still says the account is connected already, and logs the constraint without the token", async () => {
 		const from = world.guard.logs.length;
 		const answer = await change({
@@ -374,7 +380,7 @@ describe("a connection's token", () => {
 		expect(answer.status).toBe(409);
 		expect(JSON.parse(answer.text)).toEqual({
 			ok: false,
-			error: "That account is already connected, or this workspace is full.",
+			error: "That account is already connected.",
 		});
 		const logged = loggedSince(from);
 		expect(logged).not.toMatch(SEALED);
@@ -386,21 +392,68 @@ describe("a connection's token", () => {
 		]);
 		expect(await count("connection")).toBe(1);
 	});
+
+	// It said "already connected, or this workspace is full" for whatever the insert threw, so a
+	// database that could not be written to told a person their account was connected.
+	it("is not called connected already when the insert fails for another reason, and connects when asked again", async () => {
+		world.upstream.addAccount(OTHER_ACCOUNT_ID, OTHER_TOKEN, []);
+		const connect = {
+			action: "connect-cloudflare",
+			accountId: OTHER_ACCOUNT_ID,
+			token: OTHER_TOKEN,
+		};
+
+		const from = world.guard.logs.length;
+		const answer = await refusing("INSERT ON connection", () => change(connect));
+
+		expect(answer.status).toBe(500);
+		expect(answer.text).not.toContain("already connected");
+		expect(answer.text).not.toContain("up to 50");
+		const logged = loggedSince(from);
+		for (const said of [answer.text, logged]) {
+			expect(said).not.toMatch(SEALED);
+			expect(said).not.toContain(OTHER_TOKEN);
+			expect(said).not.toContain("J4Hn");
+		}
+		expect(logged).not.toContain(OTHER_ACCOUNT_ID);
+		expect(kindsSince(from)).toEqual(["D1_ERROR, SQLITE_CONSTRAINT"]);
+		expect(await count("connection")).toBe(1);
+
+		const again = await change(connect);
+		expect(again.status).toBe(200);
+		otherConnectionId = (JSON.parse(again.text) as { connection: { id: string } }).connection.id;
+		expect(JSON.parse(again.text)).toMatchObject({
+			scan: { outcome: "ok" },
+			scanState: "recorded",
+		});
+		expect(await count("connection")).toBe(2);
+	});
 });
+
+/** What a member sees of a connection on the Connections page. */
+async function shown(id: string) {
+	return (await world.connections()).body.connections.find((one) => one.id === id);
+}
 
 // A scan takes the connection, reads the account, and writes what it found in one batch. What it
 // found is the workspace's own business, and is the batch's values.
 describe("a scan whose queries fail", () => {
-	it("writes nothing, logs nothing it found, lets the connection go, and scans once when asked again", async () => {
+	it("writes nothing, logs nothing it found, says the scan could not be saved, and scans once when asked again", async () => {
 		const findings = await count("finding");
 		const scans = await count("scan");
 		expect(findings).toBe(1);
 
 		const from = world.guard.logs.length;
+		const before = Date.now();
 		const answer = await without("finding", () => change({ action: "scan", id: connectionId }));
 
-		// As for a connection someone else is scanning: nothing was scanned.
-		expect(answer.status).toBe(409);
+		// Not what a connection someone else is scanning gets, a 409 and "already running": this
+		// scan ran, and that is what the person is told.
+		expect(answer.status).toBe(500);
+		expect(JSON.parse(answer.text)).toEqual({
+			ok: false,
+			error: "The scan ran, but what it found could not be saved. Try again in a few minutes.",
+		});
 		const logged = loggedSince(from);
 		expect(logged).toContain("scan: could not record DatabaseError");
 		expect(logged).not.toContain(SUBJECT);
@@ -409,20 +462,34 @@ describe("a scan whose queries fail", () => {
 		expect(kindsSince(from)).toEqual(["D1_ERROR, SQLITE_ERROR, no such table: finding"]);
 		// The update that took the connection was sent once, and the scan let it go.
 		expect(logged).not.toContain("is sent again");
-		expect((await world.connectionRow(connectionId))?.scan_started_at).toBeNull();
+		const row = await world.connectionRow(connectionId);
+		expect(row?.scan_started_at).toBeNull();
 		expect(await count("scan")).toBe(scans);
+		// The connection says so, where a member sees it, and waits an hour.
+		expect(row?.last_scan_outcome).toBe("unrecorded");
+		expect(row?.last_scan_at).toBeGreaterThanOrEqual(before);
+		expect((row?.next_scan_at ?? 0) - (row?.last_scan_at ?? 0)).toBe(HOUR);
+		expect(await shown(connectionId)).toMatchObject({ lastScanOutcome: "unrecorded" });
 
-		// "Scan now" is once in a few minutes, so the next scan is the hour's.
+		// The scan read the account, so the allowance of "Scan now" is spent, and it says to wait
+		// rather than that a scan is running. The next scan is the hour's.
+		expect((await change({ action: "scan", id: connectionId })).status).toBe(429);
 		await world.scanDue([connectionId]);
 		expect(await count("finding")).toBe(findings);
 		expect(await count("scan")).toBe(scans + 1);
 		expect((await world.connectionRow(connectionId))?.last_scan_outcome).toBe("ok");
 	});
 
-	it("the hourly run records no scan it could not write, and one the next time", async () => {
+	// Left due, it was read every hour for nothing, 24 times a day instead of once, and came first
+	// in every hourly run: ten of them took all ten places of a run from the rest.
+	it("the hourly run records no scan it could not write, backs the connection off, and records one when it is due again", async () => {
 		const scans = await count("scan");
+		const read = () =>
+			world.upstream.seen.filter((request) => request.path.endsWith("/security-center/insights"))
+				.length;
 
 		const from = world.guard.logs.length;
+		const before = Date.now();
 		await refusing("INSERT ON scan", () => world.scanDue([connectionId]));
 
 		const logged = loggedSince(from);
@@ -440,13 +507,47 @@ describe("a scan whose queries fail", () => {
 		expect(await count("scan")).toBe(scans);
 		const row = await world.connectionRow(connectionId);
 		expect(row?.scan_started_at).toBeNull();
-		// Still due, so the next hour scans it.
-		expect(row?.next_scan_at).toBe(0);
+		// Not due any more: the first time, the next try is an hour away.
+		expect(row?.last_scan_outcome).toBe("unrecorded");
+		expect(row?.last_scan_at).toBeGreaterThanOrEqual(before);
+		expect((row?.next_scan_at ?? 0) - (row?.last_scan_at ?? 0)).toBe(HOUR);
 
-		await world.guard.runScheduled(0, HOURLY);
+		// So an hourly run that comes before then leaves it alone, and asks Cloudflare nothing.
+		const reads = read();
+		await refusing("INSERT ON scan", () => world.guard.runScheduled(0, HOURLY));
+		expect(read()).toBe(reads);
+		expect((await world.connectionRow(connectionId))?.next_scan_at).toBe(row?.next_scan_at);
+
+		// Its next scan cannot be written either, so the one after that is a day away.
+		await refusing("INSERT ON scan", () => world.scanDue([connectionId]));
+		expect(read()).toBe(reads + 1);
+		const again = await world.connectionRow(connectionId);
+		expect(again?.last_scan_outcome).toBe("unrecorded");
+		expect((again?.next_scan_at ?? 0) - (again?.last_scan_at ?? 0)).toBe(DAY);
+		expect(await count("scan")).toBe(scans);
+
+		// Once it can be written, it is, and the connection is as any other.
+		await world.scanDue([connectionId]);
 		expect(await count("scan")).toBe(scans + 1);
-		expect(await count("finding")).toBe(1);
-		expect((await world.connectionRow(connectionId))?.next_scan_at).toBeGreaterThan(0);
+		expect(await count("finding", `connection_id = '${connectionId}'`)).toBe(1);
+		const after = await world.connectionRow(connectionId);
+		expect(after?.last_scan_outcome).toBe("ok");
+		expect((after?.next_scan_at ?? 0) - (after?.last_scan_at ?? 0)).toBe(DAY);
+	});
+
+	// The token is saved either way, so this is no refusal. Its `scan: null` once meant both
+	// "another scan has it" and "it ran and could not be saved".
+	it("a new token's scan that cannot be written is told apart from one that did not run", async () => {
+		const answer = await refusing("INSERT ON scan", () =>
+			change({ action: "replace-token", id: connectionId, token: CF_TOKEN }),
+		);
+
+		expect(answer.status).toBe(200);
+		expect(JSON.parse(answer.text)).toEqual({ ok: true, scan: null, scanState: "unrecorded" });
+		expect(await shown(connectionId)).toMatchObject({ lastScanOutcome: "unrecorded" });
+
+		await world.scanDue([connectionId]);
+		expect(await shown(connectionId)).toMatchObject({ lastScanOutcome: "ok" });
 	});
 
 	it("the daily run's failure is logged by its kind, without the time it cleared by", async () => {
@@ -670,6 +771,26 @@ describe("an assistant", () => {
 		const again = await refresh(refreshToken);
 		expect(again.status).toBe(200);
 		expect(JSON.parse(again.text)).toMatchObject({ token_type: "Bearer" });
+	});
+
+	// `start_scan` goes where the page's button goes. It was told `rate_limited` and "A scan of this
+	// connection is already running", for a scan that had run and was running no more.
+	it("is told that a scan ran and could not be saved, not that one is running", async () => {
+		const told = await without("finding", () =>
+			called("start_scan", { workspace: world.slug, connection: otherConnectionId }),
+		);
+
+		expect(JSON.parse(told)).toMatchObject({
+			isError: true,
+			structuredContent: {
+				error: {
+					code: "upstream",
+					message:
+						"The scan ran, but what it found could not be saved. Try again in a few minutes.",
+				},
+			},
+		});
+		expect((await world.connectionRow(otherConnectionId))?.last_scan_outcome).toBe("unrecorded");
 	});
 
 	it("is not half taken back when that fails, and is taken back when asked again", async () => {

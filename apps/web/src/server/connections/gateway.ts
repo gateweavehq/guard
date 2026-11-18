@@ -7,17 +7,19 @@ import {
 	type ConnectionsPage,
 	type ConnectionView,
 	MAX_CONNECTIONS,
+	type ScanState,
 	type ScanSummary,
 } from "../../lib/connection-schemas";
 import { isAdminRole } from "../../lib/roles";
 import { type Acting, currentMember } from "../access";
 import { db } from "../auth";
 import { schema } from "../db";
+import { refusedBy, refusedByUnique } from "../db/query-failure";
 import { appOrigin } from "../origin";
 import { allowConnect, allowScanNow } from "../rate-limit";
 import { isSealer, sealerFor } from "../secrets";
 import { checkCloudflare, checkGithub } from "./check";
-import { runScan, type ScanResult, upstreamOptions } from "./scan";
+import { runScan, type ScanResult, type ScanRun, upstreamOptions } from "./scan";
 import { tokenHint, tokenPlace } from "./tokens";
 
 type Action = z.output<typeof ConnectionAction>;
@@ -38,6 +40,19 @@ const summary = ({ outcome, found, added, resolved }: ScanResult): ScanSummary =
 	added,
 	resolved,
 });
+
+/**
+ * The scan that follows connecting or a new token, for the answer: its summary, or none and why.
+ * The connection or the token is saved either way, which is why this is no refusal.
+ */
+const firstScan = (run: ScanRun): { scan: ScanSummary | null; scanState: ScanState } => ({
+	scan: run.state === "recorded" ? summary(run.result) : null,
+	scanState: run.state,
+});
+
+/** A scan read the connection and its result could not be written: not the same as no scan. */
+const UNRECORDED_SCAN =
+	"The scan ran, but what it found could not be saved. Try again in a few minutes.";
 
 async function viewsOf(workspaceId: string, only?: string): Promise<ConnectionView[]> {
 	const { connection } = schema;
@@ -150,11 +165,13 @@ export async function scanNow(member: Acting, connectionId: string): Promise<Sca
 			error: "This was scanned a moment ago. Wait a few minutes to scan it again.",
 		};
 	}
-	const result = await runScan(deps(), one.id);
-	if (!result) {
+	const run = await runScan(deps(), one.id);
+	if (run.state === "held") {
 		return { ok: false, status: 409, error: "A scan of this connection is already running." };
 	}
-	return { ok: true, scan: summary(result) };
+	// The allowance stays spent: the account or repository was read, which is what it counts.
+	if (run.state === "unrecorded") return { ok: false, status: 500, error: UNRECORDED_SCAN };
+	return { ok: true, scan: summary(run.result) };
 }
 
 export async function changeConnections(request: Request, slug: string): Promise<Response> {
@@ -261,19 +278,34 @@ async function connect(
 			addedAt: new Date(now),
 			nextScanAt: new Date(now),
 		});
-	} catch {
-		// The one error a person can cause: this target is already connected here, or another
-		// admin took the last place. Nothing else is worth saying, and nothing here holds the token.
-		return refused(
-			`${kind === "github" ? "That repository" : "That account"} is already connected, or this workspace is full.`,
-			409,
-		);
+	} catch (error) {
+		// The two errors a person can cause, each said only when the database itself refused for
+		// that reason: this target is already connected here, or another admin took the last place.
+		// Anything else is the database failing, and is thrown as it came, which holds no token.
+		if (
+			refusedByUnique(
+				error,
+				"connection.organization_id",
+				"connection.kind",
+				"connection.target",
+			) ||
+			refusedByUnique(error, "connection.organization_id", "connection.github_repository_id")
+		) {
+			return refused(
+				`${kind === "github" ? "That repository" : "That account"} is already connected.`,
+				409,
+			);
+		}
+		if (refusedBy(error, "a workspace may have at most 50 connections")) {
+			return refused(`A workspace can have up to ${MAX_CONNECTIONS} connections.`, 409);
+		}
+		throw error;
 	}
 	// The first scan runs now, so the page has something to show. If it fails, the connection
 	// stays and says what failed.
-	const result = await runScan(deps(), connectionId);
+	const run = await runScan(deps(), connectionId);
 	const [view] = await viewsOf(workspaceId, connectionId);
-	return answer({ ok: true, connection: view, scan: result ? summary(result) : null });
+	return answer({ ok: true, connection: view, ...firstScan(run) });
 }
 
 async function replaceToken(
@@ -319,6 +351,6 @@ async function replaceToken(
 			tokenHint: tokenHint(action.token),
 		})
 		.where(eq(connection.id, one.id));
-	const result = await runScan(deps(), one.id);
-	return answer({ ok: true, scan: result ? summary(result) : null });
+	const run = await runScan(deps(), one.id);
+	return answer({ ok: true, ...firstScan(run) });
 }

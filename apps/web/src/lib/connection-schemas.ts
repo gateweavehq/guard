@@ -103,7 +103,10 @@ export interface ConnectionView {
 	tokenHint: string;
 	addedAt: number;
 	lastScanAt: number | null;
-	/** `ok`, a failure kind, or `unreadable`. Null until the first scan finishes. */
+	/**
+	 * `ok`, a failure kind, `unreadable`, or `unrecorded` for a scan whose result could not be
+	 * saved. Null until the first scan finishes.
+	 */
 	lastScanOutcome: string | null;
 	nextScanAt: number;
 	openFindings: number;
@@ -238,6 +241,13 @@ export interface ScanSummary {
 	added: number;
 	resolved: number;
 }
+
+/**
+ * What came of the scan that follows connecting or replacing a token: `recorded` with a summary,
+ * `held` when another scan had the connection, `unrecorded` when it ran and its result could not
+ * be saved.
+ */
+export type ScanState = "recorded" | "held" | "unrecorded";
 
 /** What Guard knows of one thing it reads about a zone. `unread` is a zone no scan has read yet. */
 export type ProtectionPartView<T> =

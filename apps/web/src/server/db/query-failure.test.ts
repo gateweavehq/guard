@@ -10,9 +10,16 @@ import { listGrants, takeBack } from "../mcp/grants";
 import { resealSecrets } from "../reseal-secrets";
 import { sealerFor } from "../secrets";
 import { createDb, schema } from ".";
+import { MAX_CONNECTIONS } from "./connections-schema";
 import { faulty, LOCAL, migratedD1 } from "./faulty-d1";
 import { pruneExpired } from "./prune";
-import { DatabaseError, failingPlainly, withoutStatements } from "./query-failure";
+import {
+	DatabaseError,
+	failingPlainly,
+	refusedBy,
+	refusedByUnique,
+	withoutStatements,
+} from "./query-failure";
 import { READ_ATTEMPTS } from "./retry-reads";
 
 // A query of D1 that failed for good. Drizzle's error for it is `Failed query: select …
@@ -603,6 +610,122 @@ describe("what a trigger refused", () => {
 		const error = await thrownBy(() => db.select().from(schema.member).all());
 
 		expect((error as DatabaseError).kind).toBe("D1_ERROR");
+	});
+});
+
+// Connecting an account inserts a row, and two things a person can cause refuse it: the target is
+// connected already (a unique index), or the workspace is full (a trigger). It answered both, and
+// every other failure of the insert, an outage included, with "already connected, or this
+// workspace is full". Each is told by the failure's kind now, and nothing else passes for either.
+describe("what refused a connection", () => {
+	const TARGET = ["connection.organization_id", "connection.kind", "connection.target"] as const;
+	const REPOSITORY = ["connection.organization_id", "connection.github_repository_id"] as const;
+	const FULL = "a workspace may have at most 50 connections";
+
+	const row = (id: string, target: string) => ({
+		id,
+		organizationId: "connected-space",
+		kind: "cloudflare" as const,
+		target,
+		name: target,
+		tokenSealed: "sealed",
+		tokenHint: "hint",
+		addedBy: "someone",
+		addedAt: new Date(1),
+		nextScanAt: new Date(1),
+	});
+
+	// A database of its own: fifty connections in the shared one would be fifty tokens for the
+	// daily run's tests to seal again.
+	let own: D1Database;
+	let disposeOwn: () => Promise<void>;
+
+	beforeAll(async () => {
+		({ d1: own, dispose: disposeOwn } = await migratedD1("query-failure-connections"));
+		await createDb(own)
+			.insert(schema.organization)
+			.values({
+				id: "connected-space",
+				name: "Connected",
+				slug: "connected-space",
+				createdAt: new Date(1),
+			});
+	});
+
+	afterAll(async () => {
+		await disposeOwn?.();
+	});
+
+	it("is the unique index for a target that is connected already, and only then", async () => {
+		const db = createDb(own);
+		await db.insert(schema.connection).values(row("first", "account-one"));
+
+		const error = await thrownBy(() =>
+			db.insert(schema.connection).values(row("second", "account-one")),
+		);
+
+		expect(refusedByUnique(error, ...TARGET)).toBe(true);
+		expect(refusedByUnique(error, ...REPOSITORY)).toBe(false);
+		expect(refusedBy(error, FULL)).toBe(false);
+	});
+
+	it("is the index on a repository's id for a repository connected under another name", async () => {
+		const db = createDb(own);
+		const repository = (id: string, target: string) => ({
+			...row(id, target),
+			kind: "github" as const,
+			githubRepositoryId: 7,
+		});
+		await db.insert(schema.connection).values(repository("repo", "acme/shop"));
+
+		const error = await thrownBy(() =>
+			db.insert(schema.connection).values(repository("renamed", "acme/store")),
+		);
+
+		expect(refusedByUnique(error, ...REPOSITORY)).toBe(true);
+		expect(refusedByUnique(error, ...TARGET)).toBe(false);
+	});
+
+	it("is the trigger for a workspace that is full, and only then", async () => {
+		const db = createDb(own);
+		const have = await db.$count(
+			schema.connection,
+			eq(schema.connection.organizationId, "connected-space"),
+		);
+		for (let n = have; n < MAX_CONNECTIONS; n++) {
+			await db.insert(schema.connection).values(row(`filler-${n}`, `filler-${n}`));
+		}
+
+		const error = await thrownBy(() =>
+			db.insert(schema.connection).values(row("one-too-many", "one-too-many")),
+		);
+
+		expect(refusedBy(error, FULL)).toBe(true);
+		expect(refusedByUnique(error, ...TARGET)).toBe(false);
+	});
+
+	it.each([
+		["the database failing", LOCAL],
+		[
+			"the index's words further in, where they may be a row's",
+			"D1_ERROR: Failed to parse body as JSON, got: UNIQUE constraint failed: connection.organization_id, connection.kind, connection.target",
+		],
+		[
+			"another unique index",
+			"D1_ERROR: UNIQUE constraint failed: connection.id: SQLITE_CONSTRAINT (extended: SQLITE_CONSTRAINT_PRIMARYKEY)",
+		],
+	])("is neither for %s", async (_what, message) => {
+		const { database, state } = faulty(own);
+		const db = createDb(database);
+		state.failures = 1;
+		state.message = message;
+
+		const error = await thrownBy(() => db.insert(schema.connection).values(row("never", "never")));
+
+		expect(error).toBeInstanceOf(DatabaseError);
+		expect(refusedByUnique(error, ...TARGET)).toBe(false);
+		expect(refusedByUnique(error, ...REPOSITORY)).toBe(false);
+		expect(refusedBy(error, FULL)).toBe(false);
 	});
 });
 
