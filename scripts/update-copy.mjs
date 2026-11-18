@@ -18,7 +18,7 @@
 // mark, which is harmless before a comment and a syntax error before a shebang.
 
 import { spawnSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 
 const UPSTREAM_URL = "https://github.com/gateweavehq/guard.git";
 const OWN_REPOSITORY = /gateweavehq\/guard(\.git)?\/?$/;
@@ -87,14 +87,12 @@ function readConfig(text) {
  */
 function resources(wrangler) {
 	const config = readConfig(wrangler);
-	const queues = [...(config.queues?.producers ?? []), ...(config.queues?.consumers ?? [])];
 	return [
 		`worker ${config.name}`,
 		...(config.d1_databases ?? []).map(
 			({ binding, database_name, database_id }) =>
 				`database ${binding} ${database_name ?? ""} ${database_id ?? ""}`,
 		),
-		...queues.map(({ binding, queue }) => `queue ${binding ?? ""} ${queue}`),
 	];
 }
 
@@ -131,15 +129,30 @@ const toIndex = process.argv.indexOf("--to");
 const requested = toIndex === -1 ? null : process.argv[toIndex + 1];
 if (toIndex !== -1 && !RELEASE.test(requested ?? "")) stop("--to takes a release, such as v1.2.3.");
 
-const origin = attempt("remote", "get-url", "origin");
+const origin = attempt("config", "--get", "remote.origin.url");
 if (origin.ok && OWN_REPOSITORY.test(origin.out)) {
 	stop("This is Guard's own repository, not a copy: git pull is all it needs.");
 }
 if (git("status", "--porcelain", "--untracked-files=no")) {
+	if (existsSync(git("rev-parse", "--git-path", "SQUASH_MSG"))) {
+		stop(
+			"An interrupted update left a squash staged. Run git reset --hard, then run this script again.",
+		);
+	}
 	stop("You have uncommitted changes. Commit them or put them aside first.");
 }
 
-if (!attempt("remote", "get-url", "upstream").ok) git("remote", "add", "upstream", UPSTREAM_URL);
+const upstream = attempt("config", "--get", "remote.upstream.url");
+if (!upstream.ok) git("remote", "add", "upstream", UPSTREAM_URL);
+else if (
+	!/^https:\/\/github\.com\/gateweavehq\/guard(?:\.git)?\/?$|^git@github\.com:gateweavehq\/guard(?:\.git)?\/?$|^ssh:\/\/git@github\.com\/gateweavehq\/guard(?:\.git)?\/?$/.test(
+		upstream.out,
+	)
+) {
+	stop(
+		"The upstream remote is not gateweavehq/guard. Set it to https://github.com/gateweavehq/guard.git and run this script again.",
+	);
+}
 git("fetch", "--quiet", "--no-tags", "upstream", `+refs/tags/*:${RELEASES}/*`);
 
 const releases = lines(git("for-each-ref", "--format=%(refname:lstrip=3)", RELEASES))
@@ -163,8 +176,11 @@ const head = git("rev-parse", "HEAD");
 // What a run that stopped halfway left, by its full name so that it can be nothing else.
 attempt("update-ref", "-d", `${REPLACEMENTS}${head}`);
 git("replace", "--graft", head, `${RELEASES}/${current}^{commit}`);
-attempt("merge", "--squash", `${RELEASES}/${target}`);
+const merge = attempt("merge", "--squash", `${RELEASES}/${target}`);
 git("replace", "--delete", head);
+if (!merge.ok && !git("diff", "--name-only", "--diff-filter=U")) {
+	stop(`git merge failed: ${merge.err || merge.out}`);
+}
 
 // The button leaves workflows out of a copy, so new and changed ones of ours stay out too. They
 // would run our CI on the copy, and pushing them takes a token with the workflow scope. The guide
@@ -196,7 +212,7 @@ if (conflicts.length > 0) {
 			`Updating from ${current} to ${target} left conflicts with what this copy changed:`,
 			...conflicts.map((file) => `  ${file}`),
 			"",
-			"Fix those files, keeping your Worker's, database's and queue's names in wrangler.jsonc, then:",
+			"Fix those files, keeping your Worker's and database's names in wrangler.jsonc, then:",
 			"  git add -A",
 			`  git commit -m "chore: update Guard to ${target}"`,
 			"To start over instead: git reset --hard",
@@ -217,7 +233,7 @@ try {
 if (!sameResources) {
 	git("reset", "--hard", "--quiet");
 	stop(
-		"The update would point wrangler.jsonc at another Worker, database or queue, so nothing was changed.",
+		"The update would point wrangler.jsonc at another Worker or database, so nothing was changed.",
 	);
 }
 

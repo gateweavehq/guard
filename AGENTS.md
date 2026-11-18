@@ -33,7 +33,7 @@ fails").
 | `apps/web`        | The Worker: TanStack Start UI, Better Auth, rate limiting, email, D1      |
 | `packages/scan`   | What scans read: Security Insights, zone traffic, GitHub, lockfiles, OSV  |
 | `docs/`           | Architecture and self-hosting                                             |
-| `scripts/`        | Repository tooling (`doctor`)                                             |
+| `scripts/`        | Repository tooling (`doctor`, `update-copy` and its tests)                |
 | `.claude/skills/` | Step-by-step playbooks for recurring tasks (plain Markdown, any agent)    |
 | `wrangler.jsonc`  | The Worker's config, at the root because the Deploy button reads it there |
 
