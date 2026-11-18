@@ -1,4 +1,8 @@
-# Gateweave Guard
+<p align="center">
+  <img src=".github/logo.svg" width="96" height="96" alt="">
+</p>
+
+<h1 align="center">Gateweave Guard</h1>
 
 Security in one place for teams on Cloudflare. Guard reads your account's Security Insights, your
 zones' WAF and bot activity, and the lockfiles of your repositories, and shows what is wrong in one
