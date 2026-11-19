@@ -8,6 +8,44 @@ read its entry before updating a self-hosted copy.
 Each version's [GitHub release](https://github.com/gateweavehq/guard/releases) carries the same
 notes. Publishing a release deploys it.
 
+## [0.4.0] - 2026-11-19
+
+A copy made with the Deploy button can now be updated to a new release, and the sign-in page no
+longer sends anyone to another site. There is no migration in this release.
+
+### Added
+
+- **Update a copy made with the Deploy button.** Such a copy has no shared Git history, so
+  `git pull` cannot bring it to a new release. `scripts/update-copy.mjs` applies a release to it
+  and keeps the copy's own Worker, D1 binding and workflow; `docs/self-hosting.md` says how.
+  ([#24](https://github.com/gateweavehq/guard/pull/24))
+- **The script says why it stopped.** A refused merge stops with Git's own reason, a squash left
+  staged by an interrupted update tells you to reset first, and an `upstream` remote that is not
+  Guard is refused before anything is fetched.
+  ([#27](https://github.com/gateweavehq/guard/pull/27))
+
+### Fixed
+
+- **The page you return to after signing in stays on Guard.** A return path such as
+  `/.//example.com/x` passed the check and then, once its dot segments were resolved, pointed to
+  another site. Such a path is now refused, and an ordinary `..` that stays on Guard still works.
+  ([#26](https://github.com/gateweavehq/guard/pull/26))
+- **A scan that ran but could not be saved says so.** "Scan now" and an assistant's `start_scan`
+  used to answer that a scan was already running. They now say the scan ran and what it found
+  could not be saved. Such a connection waits an hour before its next scan, then a day if it
+  fails again, instead of coming back every hour ahead of the others. Connecting an account that
+  fails for another reason is no longer called a duplicate.
+  ([#25](https://github.com/gateweavehq/guard/pull/25))
+- **Guard has its own icon** in place of Mail's envelope, on the tab, the home screen and the
+  README.
+
+### If you run your own
+
+- **Update.** No migration, variable or secret is needed.
+- **A copy made with the Deploy button** can take this release with the commands under
+  "Updating" in `docs/self-hosting.md`. They run the script from Guard's repository, so the copy
+  does not need it first.
+
 ## [0.3.2] - 2026-11-16
 
 Puts back a guard that v0.3.1 dropped by mistake. There is no migration in this release.
