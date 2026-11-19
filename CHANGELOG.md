@@ -8,6 +8,26 @@ read its entry before updating a self-hosted copy.
 Each version's [GitHub release](https://github.com/gateweavehq/guard/releases) carries the same
 notes. Publishing a release deploys it.
 
+## [0.4.1] - 2026-11-19
+
+Better Auth, which runs sign-in and Guard's MCP server, is updated to 1.7.25. There is no migration
+in this release.
+
+### Changed
+
+- **Better Auth 1.7.25** (from 1.7.20), the version Gateweave ID runs. Among its fixes: an
+  assistant's token request that fails a check no longer uses up its code, and a session's
+  cookies are cleared when the session is revoked.
+  ([#33](https://github.com/gateweavehq/guard/pull/33))
+- **A bad or expired token at `/mcp` is answered with `error="invalid_token"`**, as RFC 6750
+  asks and Better Auth's own servers answer, so an assistant knows to refresh rather than start
+  over. A token whose access was taken back gets the same words. A request with no token is
+  answered as before.
+
+### If you run your own
+
+No migration, variable or secret. Deploy as usual.
+
 ## [0.4.0] - 2026-11-19
 
 A copy made with the Deploy button can now be updated to a new release, and the sign-in page no
