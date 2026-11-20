@@ -8,6 +8,43 @@ read its entry before updating a self-hosted copy.
 Each version's [GitHub release](https://github.com/gateweavehq/guard/releases) carries the same
 notes. Publishing a release deploys it.
 
+## [0.6.0] - 2026-11-20
+
+Guard can now connect to Gateweave Track with one approval, instead of a source key copied by hand.
+It needs Track 0.45.0 or later for that, and the paste field stays for older Tracks. This release
+adds a D1 migration.
+
+### Added
+
+- **Connect Track.** In Guard's Track settings, an owner or admin chooses **Connect Track** beside
+  a connection, then picks the workspace and team in Track and approves. Guard receives the
+  source's key straight from Track, through a one-time code and its own PKCE verifier, and seals
+  it. Nobody sees or copies the key. Like a pasted key, the first one switches the workspace from
+  filing by hand to reporting.
+  - **Interruptions:** each step survives a lost answer or a slow request. A later paste,
+    removal or "Stop reporting" wins over an approval still on its way.
+  - **Undo:** an approval that Guard cannot save is undone at Track, and the daily run retries
+    the undo until Track's deadline. Guard never undoes a source whose key it has installed.
+    ([#39](https://github.com/gateweavehq/guard/pull/39))
+- **`pnpm secrets:key-id`** prints the id of a `SECRETS_KEY` piped to it, never the key itself, to
+  match against the daily `secrets:` log line.
+
+### Changed
+
+- **Key rotation's log line names the key pair:**
+  `secrets: primary=<id> previous=<id|none> resealed=… unopened=… left=… settled=…`. `settled=true`
+  now needs a previous key, a run that resealed nothing and left nothing, and the pair first seen
+  at least an hour before the run, so a Worker of the previous deploy can no longer write under
+  the old key. Remove `SECRETS_KEY_PREVIOUS` only after such a line.
+
+### If you run your own
+
+- `pnpm run deploy` applies the D1 migration (`0011_track_connect`).
+- **Connect Track needs Track 0.45.0 or later,** and Guard served over HTTPS. Against an older
+  Track, keep pasting source keys.
+- **If you are rotating `SECRETS_KEY`,** wait for a `settled=true` line from this version before
+  removing the previous key: a line from an older version does not count.
+
 ## [0.5.0] - 2026-11-20
 
 Guard can now report its findings to Gateweave Track on its own, as a Track source, instead of
