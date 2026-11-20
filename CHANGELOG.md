@@ -8,6 +8,37 @@ read its entry before updating a self-hosted copy.
 Each version's [GitHub release](https://github.com/gateweavehq/guard/releases) carries the same
 notes. Publishing a release deploys it.
 
+## [0.5.0] - 2026-11-20
+
+Guard can now report its findings to Gateweave Track on its own, as a Track source, instead of
+someone filing each one. It needs Gateweave Track 0.44.0 or later. This release adds a D1
+migration.
+
+### Added
+
+- **Automatic reporting to Track.** In Track, make a source for each Guard connection (product
+  `guard`, Guard's address as a link origin) and paste its key beside the connection in Guard's
+  Track settings. From then on, after every scan and whenever someone dismisses or restores a
+  finding, Guard sends Track each finding whose state or severity changed: open, cleared or
+  dismissed. Track decides what becomes an issue, by the source's lowest severity, and can assign
+  it to an agent; the finding's "File in Track" becomes "Open in Track".
+  - Settings show each connection's last answer from Track, in words. After seven days of Track
+    not knowing a key, Guard stops sending for that connection and says so; a new key starts it
+    again.
+  - Saving the first source key switches the workspace from filing by hand to reporting, and
+    removes its agent key and fix label. Issues already filed keep their links. "Stop reporting"
+    removes every source key and lets the workspace connect again either way.
+  - Guard sends at most 50 events a minute per connection, clears and dismissals first, so a
+    refused open never holds them back.
+  - A workspace that saves no source key keeps filing by hand as before.
+    ([#37](https://github.com/gateweavehq/guard/pull/37))
+
+### If you run your own
+
+- `pnpm run deploy` applies the D1 migration (`0010_track_sources`).
+- Reporting needs Track 0.44.0 or later. Against an older Track, every event gets a 404, and
+  after seven days Guard stops sending for that connection until a new key is pasted.
+
 ## [0.4.1] - 2026-11-19
 
 Better Auth, which runs sign-in and Guard's MCP server, is updated to 1.7.25. There is no migration
