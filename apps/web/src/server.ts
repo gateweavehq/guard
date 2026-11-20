@@ -9,6 +9,7 @@ import { sendAlerts, sendDigests } from "./server/notifications/send";
 import { resealSecrets } from "./server/reseal-secrets";
 import { newNonce, withSecurityHeaders } from "./server/security-headers";
 import { sweepConnect } from "./server/track/connect";
+import { reportDue } from "./server/track/report";
 
 export { RateLimiter } from "./server/rate-limit";
 
@@ -72,7 +73,7 @@ export default {
 		return withSecurityHeaders(request, response, { nonce, oidcIssuer: env.OIDC_ISSUER });
 	},
 	// Two Cron Triggers (wrangler.jsonc). Every hour, scans the connections whose time has come and
-	// then sends the alerts and, on Monday at 08:00 UTC, the weekly summary.
+	// then sends pending Track reports, alerts and, on Monday at 08:00 UTC, the weekly summary.
 	// Once a day, clears what is past its time and, after SECRETS_KEY changed, seals workspaces'
 	// secrets again under it.
 	async scheduled(controller) {
@@ -81,6 +82,8 @@ export default {
 			const scans = await scanDue({ db, settings: env });
 			// Counts only: a connection's name or target is the workspace's own business.
 			if (scans.scanned > 0) console.log(`scans: ${JSON.stringify(scans)}`);
+			const reports = await reportDue(db, env);
+			if (reports.connections > 0) console.log(`reports: ${JSON.stringify(reports)}`);
 			await notify(controller.scheduledTime);
 			return;
 		}

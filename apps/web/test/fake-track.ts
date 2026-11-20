@@ -259,7 +259,9 @@ export function startFakeTrack() {
 			if (status !== 200)
 				return new Response(null, {
 					status,
-					headers: { "retry-after": behaviour.retryAfter },
+					headers: behaviour.failKeys.has(event.key)
+						? undefined
+						: { "retry-after": behaviour.retryAfter },
 				});
 			const key = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
 			const source = sources.get(key);

@@ -29,6 +29,7 @@ export async function startWorld(
 		isolates?: number;
 		beforeClaim?: () => Promise<void>;
 		sourceBatch?: (phase: "before" | "after") => Promise<void>;
+		scheduledClock?: boolean;
 		settings?: Record<string, string>;
 		isolateSettings?: Record<string, string>[];
 		/** Without it, the server cannot keep tokens. */
@@ -41,6 +42,7 @@ export async function startWorld(
 		hosts: upstream.hosts,
 		beforeClaim: options.beforeClaim,
 		sourceBatch: options.sourceBatch,
+		scheduledClock: options.scheduledClock,
 		isolates: options.isolates ?? 1,
 		isolateSettings: options.isolateSettings ?? [],
 		settings: {
