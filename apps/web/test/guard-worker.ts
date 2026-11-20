@@ -101,8 +101,12 @@ export async function startGuard(
 		withoutSecret = false,
 		settings = {},
 		isolateSettings = [],
+		beforeClaim,
+		sourceBatch,
 	}: {
 		isolates?: number;
+		beforeClaim?: () => Promise<void>;
+		sourceBatch?: (phase: "before" | "after") => Promise<void>;
 		hosts?: Record<string, (request: Request) => Response | Promise<Response>>;
 		/** What a branch's Preview lacks. */
 		withoutDatabase?: boolean;
@@ -116,6 +120,45 @@ export async function startGuard(
 	const outbound: string[] = [];
 	const logs: WorkerLog[] = [];
 	const modules = builtModules();
+	// Pause at the claim or on either side of the approval batch, while D1 still executes the writes.
+	if (sourceBatch || beforeClaim) {
+		const entry = modules.find((module) => module.path.endsWith("/index.js"));
+		if (!entry) throw new Error("Missing Worker entry");
+		entry.contents = `import "./batch-observer.js";\n${readFileSync(entry.path, "utf8")}`;
+		modules.push({
+			type: "ESModule",
+			path: join(serverDir, "batch-observer.js"),
+			contents: `
+			import {env} from "cloudflare:workers";
+			const prepare = env.DB.prepare.bind(env.DB);
+			env.DB.prepare = sql => {
+				const statement = prepare(sql);
+				if (sql.startsWith('update "track_connect" set "status"') && sql.includes('returning "state_hash"') && env.claimObserver) {
+					const bind = statement.bind.bind(statement);
+					statement.bind = (...args) => {
+						const bound = bind(...args);
+						const raw = bound.raw.bind(bound);
+						bound.raw = async (...options) => {
+							await env.claimObserver.fetch("https://observer/claim");
+							return raw(...options);
+						};
+						return bound;
+					};
+				}
+				return statement;
+			};
+			const batch = env.DB.batch.bind(env.DB);
+			env.DB.batch = async statements => {
+				if (!env.batchObserver || !statements[0]?.statement?.startsWith("INSERT INTO track_integration") || statements.length !== 4) return batch(statements);
+				await env.batchObserver.fetch("https://observer/before");
+				const results = await batch(statements);
+				const reply = await env.batchObserver.fetch("https://observer/after");
+				if (!reply.ok) throw new Error("Acknowledgement lost");
+				return results;
+			};
+		`,
+		});
+	}
 	const secret = randomBytes(32).toString("base64url");
 	const names = Array.from({ length: isolates }, (_, i) => (i === 0 ? "guard" : `guard-${i + 1}`));
 	// Miniflare 5 still takes its documented v4 options through this converter.
@@ -143,7 +186,27 @@ export async function startGuard(
 						...settings,
 						...isolateSettings[index],
 					},
-					serviceBindings: { EMAIL: "outbox" },
+					serviceBindings: {
+						EMAIL: "outbox",
+						...(beforeClaim && {
+							claimObserver: async () => {
+								await beforeClaim();
+								return new Response(null);
+							},
+						}),
+						...(sourceBatch && {
+							batchObserver: async (request: Request) => {
+								try {
+									await sourceBatch(
+										new URL(request.url).pathname === "/before" ? "before" : "after",
+									);
+									return new Response(null);
+								} catch {
+									return new Response(null, { status: 503 });
+								}
+							},
+						}),
+					},
 					d1Databases: { [withoutDatabase ? "UNBOUND_DB" : "DB"]: "guard-test" },
 					// Every copy uses the first one's Durable Objects.
 					durableObjects: {

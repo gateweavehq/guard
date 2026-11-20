@@ -1,4 +1,4 @@
-import { fromBase64, toBase64 } from "./base64";
+import { fromBase64, toBase64 } from "./base64.ts";
 
 /**
  * The deployment's `SECRETS_KEY`, which seals workspaces' secrets in D1, and the

@@ -13,6 +13,7 @@ import {
 	getTrack,
 	type SourceView,
 	sourceAnswerText,
+	startTrackConnect,
 	TRACK_DEFAULT_ADDRESS,
 	type TrackIntegrationView,
 } from "#/lib/track";
@@ -22,15 +23,20 @@ const TEXT = {
 	title: "Gateweave Track",
 	sources: "Report findings automatically",
 	setup: (origin: string) =>
-		`In Track's Settings › Sources, make a separate source for each connection. Choose product guard and add ${origin} as a link origin. Choose the lowest severity you want to file. Track defaults to high. Leave "close when cleared" off unless you want fixed findings to complete their issue.`,
+		`Choose Connect Track to approve a source for this connection. To use a pasted key, make a source in Track’s Settings › Sources. Choose product guard and add ${origin} as a link origin. Choose the lowest severity you want to file. Track defaults to high. Leave "close when cleared" off unless you want fixed findings to complete their issue.`,
 	switching:
 		"Saving a source key removes this workspace's agent key and switches from manual filing to automatic reporting. Existing issue links stay available.",
 	assignee:
 		"To have an agent work on these issues, set an assignee for this source in Track's Settings › Sources.",
 	stopped:
-		"Track has not known this key for seven days, so Guard stopped sending. Paste a new key to start again.",
+		"Track has not known this key for seven days, so Guard stopped sending. Connect again or paste a new key to start sending.",
 	sourceKey: "Source key",
 	saveSource: "Save source key",
+	connect: "Connect Track",
+	fallback: "On an older Track, paste the source key here.",
+	reconnect:
+		"Connecting again replaces this key. The old source stays in Track until you delete it there.",
+	failed: "Track was not connected",
 	sourceSaved: "Source key saved.",
 	lastAnswer: (answer: string, time: string) => `Last answer: ${answer} · ${time}`,
 	awaiting: "Waiting for a finding to report.",
@@ -189,6 +195,20 @@ function SourceForm({ row, address }: { row: SourceView; address: string | null 
 	const [key, setKey] = useState("");
 	const [origin, setOrigin] = useState(address ?? TRACK_DEFAULT_ADDRESS);
 	const [pending, setPending] = useState(false);
+	async function connect() {
+		setPending(true);
+		try {
+			const result = await startTrackConnect({
+				data: { slug, connectionId: row.id, address: address ?? origin },
+			});
+			if (result.ok) window.location.assign(result.url);
+			else toast.error(result.error);
+		} catch {
+			toast.error(TEXT.failed);
+		} finally {
+			setPending(false);
+		}
+	}
 	async function submit(event: FormEvent) {
 		event.preventDefault();
 		setPending(true);
@@ -244,6 +264,11 @@ function SourceForm({ row, address }: { row: SourceView; address: string | null 
 			)}
 			{row.stopped && <p role="alert">{TEXT.stopped}</p>}
 			{row.kind === "github" && <p>{TEXT.assignee}</p>}
+			{row.keyHint && <p>{TEXT.reconnect}</p>}
+			<p>{TEXT.fallback}</p>
+			<LiveButton type="button" disabled={pending} onClick={connect}>
+				{TEXT.connect}
+			</LiveButton>
 			<LiveButton type="submit" disabled={pending}>
 				{TEXT.saveSource}
 			</LiveButton>

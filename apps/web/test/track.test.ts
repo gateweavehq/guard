@@ -3,7 +3,7 @@ import type { TrackActionInput } from "../src/lib/track-schemas";
 import { sealToken, startWorld, type World } from "./connections-world";
 import { ACCOUNT_ID, npmLock } from "./upstreams";
 
-// Filing a finding in Gateweave Track, and asking Agents for a fix through it (GRD-6), through the
+// Filing a finding in Gateweave Track, and asking Agents for a fix through it, through the
 // built Worker, with a stand-in Track MCP server (`fake-track.ts`).
 
 /** Tokens and keys with endings no other text in these tests has, to look for where they must not be. */
@@ -20,7 +20,7 @@ const form = (
 	action: "save",
 	address: TRACK,
 	workspace: "acme",
-	team: "GRD",
+	team: "DEMO",
 	key: KEY,
 	...over,
 });
@@ -46,7 +46,7 @@ async function startFiling(labels = ["security", "agent"]) {
 		"acme",
 		KEY,
 		[
-			{ key: "GRD", name: "Guard" },
+			{ key: "DEMO", name: "Guard" },
 			{ key: "OPS", name: "Operations" },
 		],
 		labels,
@@ -100,7 +100,7 @@ describe("connecting Track in Settings", () => {
 		expect(row).toMatchObject({
 			address: TRACK,
 			workspace_slug: "acme",
-			team_key: "GRD",
+			team_key: "DEMO",
 			// Track's own spelling of the label, not what was typed.
 			fix_label: "agent",
 			key_hint: "Q7Z9",
@@ -115,13 +115,13 @@ describe("connecting Track in Settings", () => {
 		const admin = await world.trackPage();
 		expect(admin.text).not.toContain(KEY);
 		expect(admin.body.integration).toMatchObject({
-			team: "GRD",
+			team: "DEMO",
 			fixLabel: "agent",
 			keyHint: "Q7Z9",
 		});
 		const member = await world.addMember("mia");
 		const page = await world.trackPage(member);
-		expect(page.body.integration).toMatchObject({ team: "GRD", keyHint: null });
+		expect(page.body.integration).toMatchObject({ team: "DEMO", keyHint: null });
 		expect(page.text).not.toContain("Q7Z9");
 	});
 
@@ -150,7 +150,7 @@ describe("connecting Track in Settings", () => {
 		const notYours = await world.changeTrack(world.owner, form({ workspace: "beta" }));
 		expect(notYours.body.error).toMatch(/no workspace "beta"/i);
 		const noTeam = await world.changeTrack(world.owner, form({ team: "NOPE" }));
-		expect(noTeam.body.error).toMatch(/no team with the key NOPE.*GRD, OPS/);
+		expect(noTeam.body.error).toMatch(/no team with the key NOPE.*DEMO, OPS/);
 		expect(await world.trackRow()).toBeNull();
 	});
 
@@ -206,7 +206,7 @@ describe("connecting Track in Settings", () => {
 			"acme",
 			OTHER_KEY,
 			[
-				{ key: "GRD", name: "Guard" },
+				{ key: "DEMO", name: "Guard" },
 				{ key: "OPS", name: "Operations" },
 			],
 			["security", "agent"],
@@ -229,7 +229,7 @@ describe("connecting Track in Settings", () => {
 		expect(tried.body.error).toMatch(/owner or admin/);
 		const removing = await world.changeTrack(member, { action: "remove" });
 		expect(removing.status).toBe(403);
-		expect((await world.trackRow())?.team_key).toBe("GRD");
+		expect((await world.trackRow())?.team_key).toBe("DEMO");
 
 		const admin = await world.addMember("ada", "admin");
 		expect((await world.changeTrack(admin, form({ team: "OPS" }))).status).toBe(200);
@@ -271,7 +271,7 @@ describe("filing a finding in Track", () => {
 			"acme",
 			KEY,
 			[
-				{ key: "GRD", name: "Guard" },
+				{ key: "DEMO", name: "Guard" },
 				{ key: "OPS", name: "Operations" },
 			],
 			["security", "agent"],
@@ -292,13 +292,13 @@ describe("filing a finding in Track", () => {
 		const finding = await findingOf(world, "hsts_not_enabled");
 		const filed = await world.changeFinding(world.owner, { action: "file", id: finding.id });
 		expect(filed.status).toBe(200);
-		expect(filed.body.track).toMatchObject({ state: "filed", key: "GRD-1", fixRequested: false });
+		expect(filed.body.track).toMatchObject({ state: "filed", key: "DEMO-1", fixRequested: false });
 
 		const [call] = created(world);
 		expect(created(world)).toHaveLength(1);
 		expect(call?.args).toMatchObject({
 			workspace: "acme",
-			team: "GRD",
+			team: "DEMO",
 			title: "HSTS is off (example.com)",
 			priority: "medium",
 			labels: ["security"],
@@ -312,16 +312,16 @@ describe("filing a finding in Track", () => {
 
 		expect(await world.findingTrack(finding.id)).toMatchObject({
 			track_state: "filed",
-			track_issue_key: "GRD-1",
-			track_issue_url: "https://track.test/acme/issue/GRD-1",
+			track_issue_key: "DEMO-1",
+			track_issue_url: "https://track.test/acme/issue/DEMO-1",
 			track_filed_by: world.owner.userId,
 		});
 		// The page shows it as the real issue.
 		const shown = await findingOf(world, "hsts_not_enabled");
 		expect(shown.track).toEqual({
 			state: "filed",
-			key: "GRD-1",
-			url: "https://track.test/acme/issue/GRD-1",
+			key: "DEMO-1",
+			url: "https://track.test/acme/issue/DEMO-1",
 			fixRequested: false,
 		});
 	});
@@ -344,7 +344,7 @@ describe("filing a finding in Track", () => {
 	});
 
 	it("adds the security label only when the team's workspace has one", async () => {
-		world.upstream.track.addWorkspace("acme", KEY, [{ key: "GRD", name: "Guard" }], ["bug"]);
+		world.upstream.track.addWorkspace("acme", KEY, [{ key: "DEMO", name: "Guard" }], ["bug"]);
 		const finding = await findingOf(world, "dmarc");
 		const filed = await world.changeFinding(world.owner, { action: "file", id: finding.id });
 		expect(filed.status).toBe(200);
@@ -484,7 +484,7 @@ describe("filing a finding in Track", () => {
 		const finding = await findingOf(world, "hsts_not_enabled");
 		const filed = await world.changeFinding(world.owner, { action: "file", id: finding.id });
 		expect(filed.status).toBe(200);
-		expect(filed.body.track).toMatchObject({ state: "proposed", key: "GRD-1" });
+		expect(filed.body.track).toMatchObject({ state: "proposed", key: "DEMO-1" });
 		expect((await world.findingTrack(finding.id))?.track_state).toBe("proposed");
 		expect((await findingOf(world, "hsts_not_enabled")).track?.state).toBe("proposed");
 
@@ -533,7 +533,7 @@ describe("filing a finding in Track", () => {
 		expect(page.track).toEqual({ configured: false, canAskFix: false });
 		expect(page.findings.find((one) => one.id === finding.id)?.track).toMatchObject({
 			state: "filed",
-			key: "GRD-1",
+			key: "DEMO-1",
 		});
 		// Nothing can be filed without it.
 		const other = await findingOf(world, "dmarc");
@@ -630,7 +630,7 @@ describe("asking Agents for a fix, through a label", () => {
 		const finding = await findingOf(world, "GHSA-lodash");
 		const asked = await world.changeFinding(world.owner, { action: "ask-fix", id: finding.id });
 		expect(asked.status, JSON.stringify(asked.body)).toBe(200);
-		expect(asked.body.track).toMatchObject({ state: "filed", key: "GRD-1", fixRequested: true });
+		expect(asked.body.track).toMatchObject({ state: "filed", key: "DEMO-1", fixRequested: true });
 		expect(created(world)).toHaveLength(1);
 		expect(created(world)[0]?.args.labels).toEqual(["security", "agent"]);
 		expect(updated(world)).toHaveLength(0);
@@ -646,9 +646,9 @@ describe("asking Agents for a fix, through a label", () => {
 
 		const asked = await world.changeFinding(world.owner, { action: "ask-fix", id: finding.id });
 		expect(asked.status, JSON.stringify(asked.body)).toBe(200);
-		expect(asked.body.track).toMatchObject({ key: "GRD-1", fixRequested: true });
+		expect(asked.body.track).toMatchObject({ key: "DEMO-1", fixRequested: true });
 		expect(updated(world).map((call) => call.args)).toEqual([
-			{ workspace: "acme", key: "GRD-1", add_labels: ["agent"] },
+			{ workspace: "acme", key: "DEMO-1", add_labels: ["agent"] },
 		]);
 		expect(created(world)).toHaveLength(1);
 		expect(world.upstream.track.issues[0]?.labels).toEqual(["security", "agent"]);
@@ -670,7 +670,7 @@ describe("asking Agents for a fix, through a label", () => {
 	});
 
 	it("says when the label has gone from Track, and files nothing", async () => {
-		world.upstream.track.addWorkspace("acme", KEY, [{ key: "GRD", name: "Guard" }], ["security"]);
+		world.upstream.track.addWorkspace("acme", KEY, [{ key: "DEMO", name: "Guard" }], ["security"]);
 		const finding = await findingOf(world, "GHSA-lodash");
 		const asked = await world.changeFinding(world.owner, { action: "ask-fix", id: finding.id });
 		expect(asked.status).toBe(409);
@@ -767,7 +767,9 @@ describe("a changed SECRETS_KEY", () => {
 			expect(after).not.toContain(KEY);
 			expect(
 				world.guard.logs.some(
-					(log) => log.message === 'secrets: {"resealed":2,"unopened":0,"left":0}',
+					(log) =>
+						log.message ===
+						`secrets: primary=${newId} previous=${before.split(".")[1]} resealed=2 unopened=0 left=0 settled=false`,
 				),
 			).toBe(true);
 			// The new key opens it: filing from the second copy works.

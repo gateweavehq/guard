@@ -179,14 +179,22 @@ local development.
 
 **Changing it.** Set the new key as `SECRETS_KEY` and the old one as `SECRETS_KEY_PREVIOUS`. The
 daily run seals every token again under the new key, up to 500 a run, and logs `secrets:` with how
-many it sealed, how many opened with neither key and how many are still under another. Once `left` is
-0, remove `SECRETS_KEY_PREVIOUS`. A token that opens with neither key is not lost to the workspace:
-its connection says it needs attention and an admin replaces the token. Do not lose the key: without
+many it sealed, how many opened with neither key and how many are still under another.
+`pnpm secrets:key-id` prints a key's id when you pipe the key to it, one key at a time, and never
+prints the key. Remove `SECRETS_KEY_PREVIOUS` only after a run logs `primary=` with the new key's
+id, `previous=` with the old key's id, and `left=0 settled=true`. With a gradual deployment, the
+one-hour wait counts from when the new version serves all traffic. A token that opens with neither key is not lost
+to the workspace: its connection says it needs attention and an admin replaces the token. Do not lose the key: without
 it, every connection needs a new token.
 
 ### Gateweave Track, and a fix from Agents
 
-For automatic reporting, make a source in Track's Settings > Sources for each Guard connection.
+For automatic reporting with Track 0.45.0 or later, open Guard's Track settings and choose
+**Connect Track** beside the connection. Guard itself must be served over HTTPS. Enter the Track HTTPS origin on first setup, then choose
+the workspace and team in Track and approve. Reconnecting leaves the old source in Track, where
+an admin can delete it.
+
+For an older Track, use the paste field. Make a source in Track's Settings > Sources for each Guard connection.
 Choose product `guard`, the destination team and a lowest severity (Track defaults to high). Add
 the exact Guard origin shown in Guard's Track settings to the source's link origins. Leave
 "close when cleared" off unless fixed findings should complete their issue. For a repository,

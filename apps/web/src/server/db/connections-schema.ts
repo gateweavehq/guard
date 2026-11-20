@@ -469,3 +469,30 @@ export const trackSource = sqliteTable("track_source", {
 	lease: text("lease"),
 	leaseUntil: integer("lease_until"),
 });
+
+/** A connection can be removed during exchange. Its undo token stays until cleanup. */
+export const trackConnect = sqliteTable(
+	"track_connect",
+	{
+		stateHash: text("state_hash").primaryKey(),
+		organizationId: text("organization_id").notNull(),
+		connectionId: text("connection_id").notNull(),
+		userId: text("user_id").notNull(),
+		address: text("address").notNull(),
+		name: text("name").notNull(),
+		verifierSealed: text("verifier_sealed"),
+		undoSealed: text("undo_sealed"),
+		undoUntil: integer("undo_until"),
+		issuedDigest: text("issued_digest"),
+		lastTriedAt: integer("last_tried_at"),
+		undoAttempts: integer("undo_attempts").notNull().default(0),
+		undoStatus: integer("undo_status"),
+		superseded: integer("superseded").notNull().default(0),
+		status: text("status", { enum: ["pending", "exchanging", "undoing", "saved"] }).notNull(),
+		expiresAt: integer("expires_at").notNull(),
+	},
+	(t) => [
+		index("track_connect_connection").on(t.connectionId),
+		index("track_connect_expiry").on(t.expiresAt),
+	],
+);

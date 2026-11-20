@@ -24,6 +24,8 @@ export { fromBase64, toBase64 };
  */
 
 export interface Sealer {
+	readonly keyId: string;
+	readonly previousId: string | null;
 	seal(place: string, plaintext: string): Promise<string>;
 	/** Throws when the value was sealed elsewhere, under another key, or was changed. */
 	open(place: string, sealed: string): Promise<string>;
@@ -75,6 +77,8 @@ export async function sealerFor(
 	}
 	const sealing = scopedKey(current, scope);
 	return {
+		keyId: current.id,
+		previousId: keys.previous?.id ?? null,
 		async seal(place, plaintext) {
 			const iv = crypto.getRandomValues(new Uint8Array(12));
 			const sealed = await crypto.subtle.encrypt(

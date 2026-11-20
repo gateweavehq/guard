@@ -52,3 +52,8 @@ export const signUpPass = sqliteTable("sign_up_pass", {
 	email: text("email").primaryKey(),
 	expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
 });
+
+export const secretsPrimary = sqliteTable("secrets_primary", {
+	keyId: text("key_id").primaryKey(),
+	firstSeen: integer("first_seen").notNull(),
+});

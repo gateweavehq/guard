@@ -7,13 +7,14 @@ import { db } from "../auth";
 import { tokenHint } from "../connections/tokens";
 import { schema } from "../db";
 import { appOrigin } from "../origin";
+import { sealerForWrite } from "../primary-key";
 import { allowTrackCheck } from "../rate-limit";
 import { isSealer, sealerFor } from "../secrets";
 import { parseTrackAddress } from "./address";
 import { checkTrack } from "./api";
 import { trackKeyPlace } from "./key";
 import { TrackSession } from "./mcp";
-import { saveSource } from "./source-settings";
+import { saveSource, supersedeApprovals } from "./source-settings";
 
 /** The same whether the workspace doesn't exist or the caller isn't in it. */
 const notFound = () => answer({ ok: false, error: "Not found" }, 404);
@@ -122,11 +123,12 @@ export async function changeTrack(request: Request, slug: string): Promise<Respo
 					),
 				),
 			db.delete(trackIntegration).where(eq(trackIntegration.organizationId, workspaceId)),
+			...supersedeApprovals(workspaceId),
 		]);
 		return answer({ ok: true });
 	}
 
-	const sealer = await sealerFor(env, workspaceId);
+	const sealer = await sealerForWrite(db, env, workspaceId);
 	if (!isSealer(sealer)) return refused(sealer.unavailable);
 	const address = parseTrackAddress(action.address, appOrigin());
 	if (!address.ok) return refused(address.error);

@@ -164,17 +164,17 @@ describe("issueUrl", () => {
 	const integration = { address: "https://track.example.com", workspaceSlug: "acme" };
 
 	it("keeps an address on Track's own origin", () => {
-		expect(issueUrl("https://track.example.com/acme/issue/GRD-1", integration, "GRD-1")).toBe(
-			"https://track.example.com/acme/issue/GRD-1",
+		expect(issueUrl("https://track.example.com/acme/issue/DEMO-1", integration, "DEMO-1")).toBe(
+			"https://track.example.com/acme/issue/DEMO-1",
 		);
 	});
 
 	it("builds the address itself when Track names another origin", () => {
-		expect(issueUrl("https://evil.example/phish", integration, "GRD-1")).toBe(
-			"https://track.example.com/acme/issue/GRD-1",
+		expect(issueUrl("https://evil.example/phish", integration, "DEMO-1")).toBe(
+			"https://track.example.com/acme/issue/DEMO-1",
 		);
-		expect(issueUrl("not a url", integration, "GRD-1")).toBe(
-			"https://track.example.com/acme/issue/GRD-1",
+		expect(issueUrl("not a url", integration, "DEMO-1")).toBe(
+			"https://track.example.com/acme/issue/DEMO-1",
 		);
 	});
 });

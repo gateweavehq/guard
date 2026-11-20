@@ -39,6 +39,7 @@ import { Route as ApiProtectionWorkspaceRouteImport } from './routes/api/protect
 import { Route as ApiTrackWorkspaceRouteImport } from './routes/api/track/$workspace'
 import { Route as ApiTrafficWorkspaceRouteImport } from './routes/api/traffic/$workspace'
 import { Route as ApiUnsubscribeTokenRouteImport } from './routes/api/unsubscribe/$token'
+import { Route as WorkspaceSettingsTrackConnectedRouteImport } from './routes/$workspace_.settings.track.connected'
 import { Route as ApiFindingsWorkspaceNewRouteImport } from './routes/api/findings/$workspace.new'
 
 const IndexRoute = IndexRouteImport.update({
@@ -196,6 +197,12 @@ const ApiUnsubscribeTokenRoute = ApiUnsubscribeTokenRouteImport.update({
   path: '/api/unsubscribe/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const WorkspaceSettingsTrackConnectedRoute =
+  WorkspaceSettingsTrackConnectedRouteImport.update({
+    id: '/$workspace_/settings/track/connected',
+    path: '/$workspace/settings/track/connected',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiFindingsWorkspaceNewRoute = ApiFindingsWorkspaceNewRouteImport.update({
   id: '/new',
   path: '/new',
@@ -233,6 +240,7 @@ export interface FileRoutesByFullPath {
   '/api/traffic/$workspace': typeof ApiTrafficWorkspaceRoute
   '/api/unsubscribe/$token': typeof ApiUnsubscribeTokenRoute
   '/$workspace/settings/': typeof WorkspaceSettingsIndexRoute
+  '/$workspace/settings/track/connected': typeof WorkspaceSettingsTrackConnectedRoute
   '/api/findings/$workspace/new': typeof ApiFindingsWorkspaceNewRoute
 }
 export interface FileRoutesByTo {
@@ -264,6 +272,7 @@ export interface FileRoutesByTo {
   '/api/traffic/$workspace': typeof ApiTrafficWorkspaceRoute
   '/api/unsubscribe/$token': typeof ApiUnsubscribeTokenRoute
   '/$workspace/settings': typeof WorkspaceSettingsIndexRoute
+  '/$workspace/settings/track/connected': typeof WorkspaceSettingsTrackConnectedRoute
   '/api/findings/$workspace/new': typeof ApiFindingsWorkspaceNewRoute
 }
 export interface FileRoutesById {
@@ -298,6 +307,7 @@ export interface FileRoutesById {
   '/api/traffic/$workspace': typeof ApiTrafficWorkspaceRoute
   '/api/unsubscribe/$token': typeof ApiUnsubscribeTokenRoute
   '/$workspace/settings/': typeof WorkspaceSettingsIndexRoute
+  '/$workspace_/settings/track/connected': typeof WorkspaceSettingsTrackConnectedRoute
   '/api/findings/$workspace/new': typeof ApiFindingsWorkspaceNewRoute
 }
 export interface FileRouteTypes {
@@ -333,6 +343,7 @@ export interface FileRouteTypes {
     | '/api/traffic/$workspace'
     | '/api/unsubscribe/$token'
     | '/$workspace/settings/'
+    | '/$workspace/settings/track/connected'
     | '/api/findings/$workspace/new'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -364,6 +375,7 @@ export interface FileRouteTypes {
     | '/api/traffic/$workspace'
     | '/api/unsubscribe/$token'
     | '/$workspace/settings'
+    | '/$workspace/settings/track/connected'
     | '/api/findings/$workspace/new'
   id:
     | '__root__'
@@ -397,6 +409,7 @@ export interface FileRouteTypes {
     | '/api/traffic/$workspace'
     | '/api/unsubscribe/$token'
     | '/$workspace/settings/'
+    | '/$workspace_/settings/track/connected'
     | '/api/findings/$workspace/new'
   fileRoutesById: FileRoutesById
 }
@@ -418,6 +431,7 @@ export interface RootRouteChildren {
   ApiTrackWorkspaceRoute: typeof ApiTrackWorkspaceRoute
   ApiTrafficWorkspaceRoute: typeof ApiTrafficWorkspaceRoute
   ApiUnsubscribeTokenRoute: typeof ApiUnsubscribeTokenRoute
+  WorkspaceSettingsTrackConnectedRoute: typeof WorkspaceSettingsTrackConnectedRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -632,6 +646,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiUnsubscribeTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$workspace_/settings/track/connected': {
+      id: '/$workspace_/settings/track/connected'
+      path: '/$workspace/settings/track/connected'
+      fullPath: '/$workspace/settings/track/connected'
+      preLoaderRoute: typeof WorkspaceSettingsTrackConnectedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/findings/$workspace/new': {
       id: '/api/findings/$workspace/new'
       path: '/new'
@@ -716,6 +737,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiTrackWorkspaceRoute: ApiTrackWorkspaceRoute,
   ApiTrafficWorkspaceRoute: ApiTrafficWorkspaceRoute,
   ApiUnsubscribeTokenRoute: ApiUnsubscribeTokenRoute,
+  WorkspaceSettingsTrackConnectedRoute: WorkspaceSettingsTrackConnectedRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -2,6 +2,7 @@ import { and, eq, type SQL, type SQLWrapper, sql } from "drizzle-orm";
 import { tokenPlace } from "./connections/tokens";
 import type { Database } from "./db";
 import { schema } from "./db";
+import { observePrimary } from "./primary-key";
 import { isSealer, type Sealer, sealerFor } from "./secrets";
 import { type SecretsKeySettings, secretsKeys } from "./secrets-key";
 import { sourceKeyPlace, trackKeyPlace } from "./track/key";
@@ -10,9 +11,7 @@ import { sourceKeyPlace, trackKeyPlace } from "./track/key";
  * Seals workspaces' secrets in D1 again under the current `SECRETS_KEY`, from the daily run: after
  * the key changed, with the old one kept as `SECRETS_KEY_PREVIOUS`, and for values sealed before
  * keys had ids. Each value is opened, sealed under the current key and written back only if it is
- * still the one that was read, so a token replaced meanwhile is left as it now is. Ported from
- * Gateweave Mail, where it seals more than one kind of secret; Guard has two: a connection's token
- * and a workspace's key to Gateweave Track.
+ * still the one that was read, so a token replaced meanwhile is left as it now is. Guard rotates connection tokens, Track keys, and the verifier and undo token of an approval attempt.
  */
 
 /** How many values one run seals again, at most. The next run takes the rest. */
@@ -27,15 +26,26 @@ export interface SecretsResealed {
 	unopened: number;
 	/** Still under another key after this run, those that don't open among them. */
 	left: number;
+	primary: string;
+	previous: string | null;
+	settled: boolean;
 }
 
 /** What this run did, or null when the deployment has no current key to seal with. */
 export async function resealSecrets(
 	db: Database,
 	settings: SecretsKeySettings,
+	startedAt = Date.now(),
 ): Promise<SecretsResealed | null> {
 	const keys = await secretsKeys(settings);
 	if (!keys.current) return null;
+	const previous = keys.previous?.id ?? null;
+	const pair = await observePrimary(db, keys.current.id, previous);
+	const primary = await db
+		.select()
+		.from(schema.secretsPrimary)
+		.where(eq(schema.secretsPrimary.keyId, pair))
+		.get();
 	const prefix = `v2.${keys.current.id}.`;
 	// Not LIKE: a key id may hold `_`, which LIKE takes for any character.
 	const notCurrent = (column: SQLWrapper): SQL =>
@@ -49,7 +59,14 @@ export async function resealSecrets(
 		}
 		return made;
 	};
-	const done: SecretsResealed = { resealed: 0, unopened: 0, left: 0 };
+	const done: SecretsResealed = {
+		primary: keys.current.id,
+		previous,
+		resealed: 0,
+		unopened: 0,
+		left: 0,
+		settled: false,
+	};
 	/** Opens and seals one value again, or says it doesn't open. */
 	const again = async (workspaceId: string, where: string, sealed: string) => {
 		const sealer = await sealerOf(workspaceId);
@@ -151,6 +168,52 @@ export async function resealSecrets(
 		done.resealed += written.meta.changes;
 	}
 
+	const { trackConnect } = schema;
+	for (const field of ["verifierSealed", "undoSealed"] as const) {
+		const column = trackConnect[field];
+		let after = null as string | null;
+		while (done.resealed < RESEAL_SECRETS_BATCH) {
+			const cursor: string | null = after;
+			const rows = await db
+				.select({
+					hash: trackConnect.stateHash,
+					workspace: trackConnect.organizationId,
+					sealed: column,
+				})
+				.from(trackConnect)
+				.where(
+					and(notCurrent(column), cursor ? sql`${trackConnect.stateHash} > ${cursor}` : undefined),
+				)
+				.orderBy(trackConnect.stateHash)
+				.limit(PAGE);
+			for (const row of rows) {
+				if (done.resealed >= RESEAL_SECRETS_BATCH) break;
+				after = row.hash;
+				if (row.sealed === null) continue;
+				const place = field === "verifierSealed" ? "track-verifier" : "track-undo";
+				const sealed = await again(row.workspace, `${place}:${row.hash}`, row.sealed);
+				if (!sealed) continue;
+				const written = await db
+					.update(trackConnect)
+					.set({ [field]: sealed })
+					.where(
+						and(
+							eq(trackConnect.organizationId, row.workspace),
+							eq(trackConnect.stateHash, row.hash),
+							eq(column, row.sealed),
+						),
+					);
+				done.resealed += written.meta.changes;
+			}
+			if (rows.length < PAGE) break;
+		}
+		const left = await db
+			.select({ count: sql<number>`count(*)` })
+			.from(trackConnect)
+			.where(notCurrent(column))
+			.get();
+		done.left += left?.count ?? 0;
+	}
 	const [leftSources, leftConnections, leftTrack] = await Promise.all([
 		db
 			.select({ count: sql<number>`count(*)` })
@@ -168,6 +231,12 @@ export async function resealSecrets(
 			.where(and(eq(trackIntegration.sourceMode, 0), notCurrent(trackIntegration.keySealed)))
 			.get(),
 	]);
-	done.left = (leftSources?.count ?? 0) + (leftConnections?.count ?? 0) + (leftTrack?.count ?? 0);
+	done.left += (leftSources?.count ?? 0) + (leftConnections?.count ?? 0) + (leftTrack?.count ?? 0);
+	done.settled =
+		previous !== null &&
+		done.resealed === 0 &&
+		done.left === 0 &&
+		!!primary &&
+		primary.firstSeen <= startedAt - 3_600_000;
 	return done;
 }

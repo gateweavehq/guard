@@ -4,6 +4,33 @@ import type { TrackActionInput, TrackIntegrationView } from "./track-schemas";
 
 export * from "./track-schemas";
 
+export const startTrackConnect = createServerFn({ method: "POST" })
+	.validator(
+		z.object({
+			slug: z.string(),
+			connectionId: z.string(),
+			address: z.string().max(300).optional(),
+		}),
+	)
+	.handler(async ({ data }) => {
+		const { start } = await import("#/server/track/connect");
+		return start(data.slug, data.connectionId, data.address);
+	});
+
+export const finishTrackConnect = createServerFn({ method: "POST" })
+	.validator(
+		z.object({
+			slug: z.string(),
+			state: z.string(),
+			code: z.string().optional(),
+			error: z.string().optional(),
+		}),
+	)
+	.handler(async ({ data }) => {
+		const { finish } = await import("#/server/track/connect");
+		return finish(data.slug, data.state, data.code, data.error);
+	});
+
 /** The workspace's Track settings, or null when the caller is not in it. */
 export const getTrack = createServerFn({ method: "GET" })
 	.validator(z.string().min(1))
