@@ -220,7 +220,9 @@ function FindingsPage() {
 							? TEXT.showing(formatNumber(page.findings.length), formatNumber(page.total))
 							: TEXT.count(formatNumber(page.total))}
 					</p>
-					{!page.track.configured && status === "open" && <ConnectTrackLine />}
+					{!page.track.configured && !page.track.sourceMode && status === "open" && (
+						<ConnectTrackLine />
+					)}
 					<ul className="divide-y rounded-lg border">
 						{page.findings.map((finding) => (
 							<FindingRow

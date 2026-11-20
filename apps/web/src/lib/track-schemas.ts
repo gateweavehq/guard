@@ -38,6 +38,15 @@ export const TrackAction = z.discriminatedUnion("action", [
 		key: z.preprocess(blankToUndefined, trackKeyField.optional()),
 	}),
 	z.object({ action: z.literal("remove") }),
+	z.object({
+		action: z.literal("source"),
+		connectionId: z.string().min(1),
+		address: z.string().trim().min(1).max(300).optional(),
+		key: z
+			.string()
+			.length(47)
+			.regex(/^gws_[A-Za-z0-9_-]{43}$/, "Paste a source key from Track."),
+	}),
 ]);
 
 export type TrackActionInput = z.input<typeof TrackAction>;
@@ -55,7 +64,35 @@ export interface TrackIntegrationView {
 	lastCheckOutcome: string | null;
 }
 
+export interface SourceView {
+	id: string;
+	name: string;
+	kind: "github" | "cloudflare";
+	keyHint: string | null;
+	/** Track's status code, or `unreachable`, `invalid_response` or `unreadable`. */
+	lastAnswer: string | null;
+	answeredAt: number | null;
+	stopped: boolean;
+}
+
+const ANSWERS: Record<string, string> = {
+	"200": "Track took the finding",
+	"400": "Track refused a finding",
+	"404": "Track doesn't know this key",
+	"429": "Track asked Guard to wait",
+	unreachable: "Track couldn't be reached",
+	invalid_response: "Track's answer couldn't be read",
+	unreadable: "Guard couldn't open the saved key",
+};
+
+/** What a source's last answer means, in words an admin can act on. */
+export function sourceAnswerText(answer: string): string {
+	return ANSWERS[answer] ?? `Track answered ${answer}`;
+}
 export interface TrackPage {
+	sources: SourceView[];
+	guardOrigin: string;
+	sourceAddress: string | null;
 	/** Why this server cannot keep a key; null when it can. */
 	sealingProblem: string | null;
 	integration: TrackIntegrationView | null;
@@ -75,6 +112,7 @@ export interface TrackLinkView {
 /** What the Findings page needs to know about the integration. */
 export interface TrackStatusView {
 	configured: boolean;
+	sourceMode?: boolean;
 	/** Whether "Ask Agents for a fix" is offered: a label is set. */
 	canAskFix: boolean;
 }

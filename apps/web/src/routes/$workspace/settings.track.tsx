@@ -11,6 +11,8 @@ import { useDocumentTitle } from "#/lib/title";
 import {
 	changeTrack,
 	getTrack,
+	type SourceView,
+	sourceAnswerText,
 	TRACK_DEFAULT_ADDRESS,
 	type TrackIntegrationView,
 } from "#/lib/track";
@@ -18,6 +20,21 @@ import {
 /** Everything this screen says, in one place, so it can be translated without hunting for it. */
 const TEXT = {
 	title: "Gateweave Track",
+	sources: "Report findings automatically",
+	setup: (origin: string) =>
+		`In Track's Settings › Sources, make a separate source for each connection. Choose product guard and add ${origin} as a link origin. Choose the lowest severity you want to file. Track defaults to high. Leave "close when cleared" off unless you want fixed findings to complete their issue.`,
+	switching:
+		"Saving a source key removes this workspace's agent key and switches from manual filing to automatic reporting. Existing issue links stay available.",
+	assignee:
+		"To have an agent work on these issues, set an assignee for this source in Track's Settings › Sources.",
+	stopped:
+		"Track has not known this key for seven days, so Guard stopped sending. Paste a new key to start again.",
+	sourceKey: "Source key",
+	saveSource: "Save source key",
+	sourceSaved: "Source key saved.",
+	lastAnswer: (answer: string, time: string) => `Last answer: ${answer} · ${time}`,
+	awaiting: "Waiting for a finding to report.",
+	memberSource: "This workspace reports findings automatically to Track.",
 	intro:
 		"File a finding as an issue in Gateweave Track, and ask Gateweave Agents to fix a dependency through it. Guard sends Track only what it found, never a token or a secret.",
 	privacy:
@@ -81,7 +98,8 @@ export const Route = createFileRoute("/$workspace/settings/track")({
 
 function TrackPage() {
 	useDocumentTitle(TEXT.title);
-	const { sealingProblem, integration } = Route.useLoaderData();
+	const { sealingProblem, integration, sources, guardOrigin, sourceAddress } =
+		Route.useLoaderData();
 	const admin = isAdminRole(useMyRole());
 
 	return (
@@ -99,13 +117,99 @@ function TrackPage() {
 						<p className="text-muted-foreground">{TEXT.notSetUpFix}</p>
 					</div>
 				) : (
-					<TrackForm integration={integration} />
+					<>
+						{sources.length > 0 && (
+							<section className="space-y-4">
+								<h3 className="font-semibold">{TEXT.sources}</h3>
+								<p className="text-sm">{TEXT.setup(guardOrigin)}</p>
+								{integration && <p className="text-sm">{TEXT.switching}</p>}
+								{sources.map((row) => (
+									<SourceForm
+										key={row.id}
+										row={row}
+										address={sourceAddress ?? integration?.address ?? null}
+									/>
+								))}
+							</section>
+						)}
+						{!sourceAddress && <TrackForm integration={integration} />}
+					</>
 				)
+			) : sourceAddress ? (
+				<p>{TEXT.memberSource}</p>
 			) : (
 				<MemberStatus integration={integration} />
 			)}
 			<p className="text-sm text-muted-foreground">{TEXT.privacy}</p>
 		</section>
+	);
+}
+
+function SourceForm({ row, address }: { row: SourceView; address: string | null }) {
+	const { slug } = useWorkspace();
+	const router = useRouter();
+	const [key, setKey] = useState("");
+	const [origin, setOrigin] = useState(address ?? TRACK_DEFAULT_ADDRESS);
+	const [pending, setPending] = useState(false);
+	async function submit(event: FormEvent) {
+		event.preventDefault();
+		setPending(true);
+		try {
+			const result = await changeTrack(slug, {
+				action: "source",
+				connectionId: row.id,
+				key,
+				address: address ?? origin,
+			});
+			if (!result.ok) {
+				toast.error(result.error);
+				return;
+			}
+			setKey("");
+			toast.success(TEXT.sourceSaved);
+			await router.invalidate();
+		} finally {
+			setPending(false);
+		}
+	}
+	return (
+		<form className="space-y-3 rounded-lg border p-4 text-sm" onSubmit={submit}>
+			<h4 className="font-medium">{row.name}</h4>
+			<label htmlFor={`source-origin-${row.id}`}>
+				{TEXT.addressLabel}
+				<Input
+					id={`source-origin-${row.id}`}
+					value={address ?? origin}
+					readOnly={!!address}
+					required
+					onChange={(event) => setOrigin(event.target.value)}
+				/>
+			</label>
+			<label htmlFor={`source-key-${row.id}`}>
+				{TEXT.sourceKey}
+				<Input
+					id={`source-key-${row.id}`}
+					type="password"
+					autoComplete="new-password"
+					value={key}
+					required
+					onChange={(event) => setKey(event.target.value)}
+				/>
+			</label>
+			{row.keyHint && (
+				<p>
+					{TEXT.connected(row.keyHint)} ·{" "}
+					{row.lastAnswer && row.answeredAt
+						? TEXT.lastAnswer(sourceAnswerText(row.lastAnswer), formatRelative(row.answeredAt))
+						: TEXT.awaiting}
+				</p>
+			)}
+			{row.stopped && <p role="alert">{TEXT.stopped}</p>}
+			{row.kind === "github" && <p>{TEXT.assignee}</p>}
+			<LiveButton type="submit" disabled={pending}>
+				{TEXT.saveSource}
+			</LiveButton>
+		</form>
 	);
 }
 

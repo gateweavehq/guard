@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { isAdminRole } from "../../lib/roles";
 import { TrackAction, type TrackIntegrationView, type TrackPage } from "../../lib/track-schemas";
 import { currentMember } from "../access";
@@ -13,6 +13,7 @@ import { parseTrackAddress } from "./address";
 import { checkTrack } from "./api";
 import { trackKeyPlace } from "./key";
 import { TrackSession } from "./mcp";
+import { saveSource } from "./source-settings";
 
 /** The same whether the workspace doesn't exist or the caller isn't in it. */
 const notFound = () => answer({ ok: false, error: "Not found" }, 404);
@@ -53,7 +54,27 @@ export async function listTrack(slug: string): Promise<TrackPage | null> {
 	const sealer = await sealerFor(env, workspaceId);
 	return {
 		sealingProblem: isSealer(sealer) ? null : sealer.unavailable,
-		integration: row ? viewOf(row, isAdminRole(role)) : null,
+		guardOrigin: appOrigin(),
+		sourceAddress: row?.sourceMode ? row.address : null,
+		sources: isAdminRole(role)
+			? (
+					await db
+						.select({
+							id: schema.connection.id,
+							name: schema.connection.name,
+							kind: schema.connection.kind,
+							keyHint: schema.trackSource.keyHint,
+							lastAnswer: schema.trackSource.lastAnswer,
+							answeredAt: schema.trackSource.answeredAt,
+							stopped: schema.trackSource.stopped,
+						})
+						.from(schema.connection)
+						.leftJoin(schema.trackSource, eq(schema.connection.id, schema.trackSource.connectionId))
+						.where(eq(schema.connection.organizationId, workspaceId))
+						.orderBy(schema.connection.name)
+				).map((row) => ({ ...row, stopped: Boolean(row.stopped) }))
+			: [],
+		integration: row && !row.sourceMode ? viewOf(row, isAdminRole(role)) : null,
 	};
 }
 
@@ -80,9 +101,16 @@ export async function changeTrack(request: Request, slug: string): Promise<Respo
 	const { trackIntegration } = schema;
 	const action = parsed.data;
 
+	if (action.action === "source") {
+		return saveSource(workspaceId, member.user.id, action);
+	}
 	if (action.action === "remove") {
 		// The links on findings stay: they are what was filed, whatever happens to the way of filing.
-		await db.delete(trackIntegration).where(eq(trackIntegration.organizationId, workspaceId));
+		await db
+			.delete(trackIntegration)
+			.where(
+				and(eq(trackIntegration.organizationId, workspaceId), eq(trackIntegration.sourceMode, 0)),
+			);
 		return answer({ ok: true });
 	}
 
@@ -96,6 +124,8 @@ export async function changeTrack(request: Request, slug: string): Promise<Respo
 		.from(trackIntegration)
 		.where(eq(trackIntegration.organizationId, workspaceId))
 		.get();
+	if (existing?.sourceMode)
+		return refused("This workspace reports findings with source keys.", 409);
 	// The kept key is for the Track it was made in. Sent to another address it would hand that
 	// server a key to this one, so a new address always needs a new key.
 	let key = action.key ?? null;
@@ -141,11 +171,16 @@ export async function changeTrack(request: Request, slug: string): Promise<Respo
 	await db
 		.insert(trackIntegration)
 		.values({ organizationId: workspaceId, ...values })
-		.onConflictDoUpdate({ target: trackIntegration.organizationId, set: values });
+		.onConflictDoUpdate({
+			target: trackIntegration.organizationId,
+			set: values,
+			setWhere: eq(trackIntegration.sourceMode, 0),
+		});
 	const saved = await db
 		.select()
 		.from(trackIntegration)
 		.where(eq(trackIntegration.organizationId, workspaceId))
 		.get();
+	if (saved?.sourceMode) return refused("This workspace reports findings with source keys.", 409);
 	return answer({ ok: true, integration: saved ? viewOf(saved, true) : null });
 }

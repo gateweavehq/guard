@@ -323,6 +323,39 @@ has no button and no unsubscribe link, and says where to change the setting inst
 
 ### Actions: a finding in Gateweave Track, and a fix from Agents
 
+Guard can report findings automatically to a Track source. An owner or admin saves one source key
+per repository or Cloudflare account connection. All sources use the workspace's Track HTTPS origin.
+Saving the first source switches the workspace to source mode and erases the sealed agent key, its
+hint and the fix label in the same D1 batch. Existing MCP issues and proposals keep their links.
+Manual filing and the Agents label action are available only in workspaces still using an agent key.
+
+Each source key is sealed under the workspace key with the connection id as additional data. The
+daily secret rotation includes these keys. A digest prevents accidental reuse of a key between
+connections. Only admins see its four-character hint. Guard stores its own origin at setup so an
+hourly scan can link to Findings without an incoming request.
+
+After setup, a recorded scan, a dismissal or a restore, Guard posts pending findings one at a time
+to Track's `/api/events`. The fingerprint names the signal. Dismissal takes precedence over
+resolution. Guard maps moderate to medium, sends plain-text facts and a link to the finding,
+and fits the serialized request within 16 KiB. Previously unseen findings start with an open
+observation. MCP claims, proposals and filings are excluded. A connection lease serializes sends
+and the last minute's call times enforce 60 requests per minute across scans. Higher severity
+findings go first. Remaining findings wait for another scan or change.
+
+| Answer                                          | What Guard records and does                                                                                                                                                |
+| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 200                                             | Saves the sent state and severity, replaces the issue link (possibly with null), and clears the 404 timer. Findings opens a returned issue on the configured Track origin. |
+| 400 or an event too large to send               | Logs the finding id and skips that state and severity until they change.                                                                                                   |
+| 404                                             | Remembers the first 404 since the last success. A further 404 at least seven days later stops this connection until an admin pastes a key.                                 |
+| 429                                             | Remembers the Retry-After deadline and defers this connection.                                                                                                             |
+| Network failure, invalid answer or server error | Leaves the attempt unconfirmed and retries the current observation at the next opportunity.                                                                                |
+
+Settings shows the latest outcome and time. Guard marks an attempt unconfirmed before sending, so
+a lost response followed by a restore sends the open observation even if open was the last state
+Guard saw acknowledged. A replacement key replays known signals and keeps the rate window.
+
+#### Manual filing over MCP
+
 A finding is fixed where a team plans its work. An owner or admin connects the workspace to **one
 Gateweave Track** in Settings, Gateweave Track (`/api/track/<workspace>`,
 `apps/web/src/server/track/gateway.ts`): Track's address, the Track workspace's slug, the key of the

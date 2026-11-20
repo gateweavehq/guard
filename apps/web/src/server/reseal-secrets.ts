@@ -4,7 +4,7 @@ import type { Database } from "./db";
 import { schema } from "./db";
 import { isSealer, type Sealer, sealerFor } from "./secrets";
 import { type SecretsKeySettings, secretsKeys } from "./secrets-key";
-import { trackKeyPlace } from "./track/key";
+import { sourceKeyPlace, trackKeyPlace } from "./track/key";
 
 /**
  * Seals workspaces' secrets in D1 again under the current `SECRETS_KEY`, from the daily run: after
@@ -108,7 +108,7 @@ export async function resealSecrets(
 			sealed: trackIntegration.keySealed,
 		})
 		.from(trackIntegration)
-		.where(notCurrent(trackIntegration.keySealed))
+		.where(and(eq(trackIntegration.sourceMode, 0), notCurrent(trackIntegration.keySealed)))
 		.orderBy(trackIntegration.organizationId)
 		.limit(Math.max(0, RESEAL_SECRETS_BATCH - done.resealed))
 		.all();
@@ -129,7 +129,34 @@ export async function resealSecrets(
 		done.resealed += written.length;
 	}
 
-	const [leftConnections, leftTrack] = await Promise.all([
+	const { trackSource } = schema;
+	const sources = await db
+		.select({
+			id: trackSource.connectionId,
+			workspaceId: connection.organizationId,
+			sealed: trackSource.keySealed,
+		})
+		.from(trackSource)
+		.innerJoin(connection, eq(trackSource.connectionId, connection.id))
+		.where(notCurrent(trackSource.keySealed))
+		.limit(Math.max(0, RESEAL_SECRETS_BATCH - done.resealed))
+		.all();
+	for (const row of sources) {
+		const sealed = await again(row.workspaceId, sourceKeyPlace(row.id), row.sealed);
+		if (sealed === null) continue;
+		const written = await db
+			.update(trackSource)
+			.set({ keySealed: sealed })
+			.where(and(eq(trackSource.connectionId, row.id), eq(trackSource.keySealed, row.sealed)));
+		done.resealed += written.meta.changes;
+	}
+
+	const [leftSources, leftConnections, leftTrack] = await Promise.all([
+		db
+			.select({ count: sql<number>`count(*)` })
+			.from(trackSource)
+			.where(notCurrent(trackSource.keySealed))
+			.get(),
 		db
 			.select({ count: sql<number>`count(*)` })
 			.from(connection)
@@ -138,9 +165,9 @@ export async function resealSecrets(
 		db
 			.select({ count: sql<number>`count(*)` })
 			.from(trackIntegration)
-			.where(notCurrent(trackIntegration.keySealed))
+			.where(and(eq(trackIntegration.sourceMode, 0), notCurrent(trackIntegration.keySealed)))
 			.get(),
 	]);
-	done.left = (leftConnections?.count ?? 0) + (leftTrack?.count ?? 0);
+	done.left = (leftSources?.count ?? 0) + (leftConnections?.count ?? 0) + (leftTrack?.count ?? 0);
 	return done;
 }
