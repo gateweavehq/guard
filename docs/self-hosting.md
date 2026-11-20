@@ -196,9 +196,10 @@ an admin can delete it.
 
 For an older Track, use the paste field. Make a source in Track's Settings > Sources for each Guard connection.
 Choose product `guard`, the destination team and a lowest severity (Track defaults to high). Add
-the exact Guard origin shown in Guard's Track settings to the source's link origins. Leave
-"close when cleared" off unless fixed findings should complete their issue. For a repository,
-you can set an assignee in Track.
+the exact Guard origin shown in Guard's Track settings to the source's link origins. Turn on
+"close when cleared", as Connect Track does: Guard clears a finding only after a complete scan,
+Track then completes its issue only if nobody has started it, and a finding that comes back
+reopens the issue. For a repository, you can set an assignee in Track.
 
 Paste the source key beside the corresponding connection in Guard's Track settings. Enter the
 Track HTTPS origin on first setup. Guard seals the key under `SECRETS_KEY`. Switching a workspace
