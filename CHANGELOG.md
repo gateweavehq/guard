@@ -8,6 +8,26 @@ read its entry before updating a self-hosted copy.
 Each version's [GitHub release](https://github.com/gateweavehq/guard/releases) carries the same
 notes. Publishing a release deploys it.
 
+## [0.6.1] - 2026-11-20
+
+Reporting to Track no longer waits a day for what it could not send at once. There is no
+migration in this release.
+
+### Fixed
+
+- **Unsent reports and retries go out every hour.** Guard sends Track at most 50 events a minute
+  per connection, and until now sent more only after the next scan, a day later. A newly connected
+  workspace with more findings, or a send Track asked to retry, waited that long. The hourly run now
+  sends what is pending: up to 150 events a run across connections, oldest answer first.
+  ([#41](https://github.com/gateweavehq/guard/pull/41))
+- **A `503` with `Retry-After` waits that long before the retry,** as a `429` does. Track 0.45.0
+  answers this way while a source is being taken back.
+
+### If you run your own
+
+No migration, variable or secret. Deploy as usual. The hourly run logs `reports:` with how many
+connections it reported for and how many events it sent.
+
 ## [0.6.0] - 2026-11-20
 
 Guard can now connect to Gateweave Track with one approval, instead of a source key copied by hand.
