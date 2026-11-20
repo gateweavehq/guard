@@ -23,7 +23,7 @@ const TEXT = {
 	title: "Gateweave Track",
 	sources: "Report findings automatically",
 	setup: (origin: string) =>
-		`Choose Connect Track to approve a source for this connection. To use a pasted key, make a source in Track’s Settings › Sources. Choose product guard and add ${origin} as a link origin. Choose the lowest severity you want to file. Track defaults to high. Leave "close when cleared" off unless you want fixed findings to complete their issue.`,
+		`Choose Connect Track to approve a source for this connection. To use a pasted key, make a source in Track’s Settings › Sources. Choose product guard and add ${origin} as a link origin. Choose the lowest severity you want to file. Track defaults to high. Turn on "close when cleared": Guard clears a finding only after a complete scan, and Track completes only an issue nobody has started.`,
 	switching:
 		"Saving a source key removes this workspace's agent key and switches from manual filing to automatic reporting. Existing issue links stay available.",
 	assignee:
