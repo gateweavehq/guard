@@ -59,9 +59,12 @@ const answerSchema = z.object({
 });
 
 type Reply =
-	| { status: "200"; issue: { key: string; url: string } | null }
+	| { status: "200" | "foreign_link"; issue: { key: string; url: string } | null }
 	| { status: "429"; delay: number }
 	| { status: string; issue?: undefined; delay?: undefined };
+
+/** Track's own limits reset within a day, so a longer wait is a mistake, not a limit. */
+const LONGEST_WAIT = 86_400_000;
 
 export async function postEvent(
 	address: string,
@@ -82,16 +85,20 @@ export async function postEvent(
 			return {
 				status: "429",
 				delay:
-					Number.isSafeInteger(seconds) && seconds > 0 ? Math.min(seconds, 8e12) * 1000 : 60_000,
+					Number.isSafeInteger(seconds) && seconds > 0
+						? Math.min(seconds * 1000, LONGEST_WAIT)
+						: 60_000,
 			};
 		}
 		if (response.status !== 200) return { status: String(response.status) };
 		const answer = answerSchema.safeParse(await response.json());
 		if (!answer.success) return { status: "invalid_response" };
 		if (answer.data.issue) {
+			// Track applied the event, so the state is confirmed either way. A link elsewhere than the
+			// address the admin gave is not shown: Guard links only to the Track it was told of.
 			const url = new URL(answer.data.issue.url);
 			if (url.origin !== address || url.username || url.password)
-				return { status: "invalid_response" };
+				return { status: "foreign_link", issue: null };
 		}
 		return { status: "200", issue: answer.data.issue };
 	} catch {

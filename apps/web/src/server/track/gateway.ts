@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { and, eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { isAdminRole } from "../../lib/roles";
 import { TrackAction, type TrackIntegrationView, type TrackPage } from "../../lib/track-schemas";
 import { currentMember } from "../access";
@@ -106,11 +106,23 @@ export async function changeTrack(request: Request, slug: string): Promise<Respo
 	}
 	if (action.action === "remove") {
 		// The links on findings stay: they are what was filed, whatever happens to the way of filing.
-		await db
-			.delete(trackIntegration)
-			.where(
-				and(eq(trackIntegration.organizationId, workspaceId), eq(trackIntegration.sourceMode, 0)),
-			);
+		// Removing a workspace that reports through sources removes their keys too, so it can connect
+		// again either way, to any address.
+		const { connection, trackSource } = schema;
+		await db.batch([
+			db
+				.delete(trackSource)
+				.where(
+					inArray(
+						trackSource.connectionId,
+						db
+							.select({ id: connection.id })
+							.from(connection)
+							.where(eq(connection.organizationId, workspaceId)),
+					),
+				),
+			db.delete(trackIntegration).where(eq(trackIntegration.organizationId, workspaceId)),
+		]);
 		return answer({ ok: true });
 	}
 

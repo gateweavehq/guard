@@ -196,7 +196,7 @@ Paste the source key beside the corresponding connection in Guard's Track settin
 Track HTTPS origin on first setup. Guard seals the key under `SECRETS_KEY`. Switching a workspace
 to automatic reporting removes its agent key and fix label while preserving existing issue links.
 Settings shows the last answer per connection. After seven days of unknown-key responses Guard
-stops sending for that connection. Paste a replacement key to resume.
+stops sending for that connection. Paste a replacement key to resume. "Stop reporting" forgets every source key and the Track address, so the workspace can connect again with source keys or an agent key, to any address.
 
 #### Manual filing
 

@@ -69,7 +69,10 @@ export interface SourceView {
 	name: string;
 	kind: "github" | "cloudflare";
 	keyHint: string | null;
-	/** Track's status code, or `unreachable`, `invalid_response` or `unreadable`. */
+	/**
+	 * Track's status code, or `foreign_link`, `too_large`, `unreachable`, `invalid_response` or
+	 * `unreadable`.
+	 */
 	lastAnswer: string | null;
 	answeredAt: number | null;
 	stopped: boolean;
@@ -83,6 +86,8 @@ const ANSWERS: Record<string, string> = {
 	unreachable: "Track couldn't be reached",
 	invalid_response: "Track's answer couldn't be read",
 	unreadable: "Guard couldn't open the saved key",
+	foreign_link: "Track took the finding but linked it on another address",
+	too_large: "A finding was too large to send",
 };
 
 /** What a source's last answer means, in words an admin can act on. */

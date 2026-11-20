@@ -60,15 +60,16 @@ describe("Track source events", () => {
 		}
 		expect(eventBody({ ...facts, fingerprint: "界".repeat(16384) }, "open", 0, url)).toBeNull();
 	});
-	it("sends only to the configured origin and rejects unsafe issue links and incomplete answers", async () => {
-		for (const reply of [
-			{ state: "open", filed: true, issue: { key: "X", url: "https://elsewhere.test/issue/X" } },
-			{},
-		]) {
+	it("sends only to the configured origin, keeps no link elsewhere, and rejects incomplete answers", async () => {
+		const elsewhere = (url: string) => ({ state: "open", filed: true, issue: { key: "X", url } });
+		for (const [reply, answer] of [
+			// Track applied the event, so its state counts; only the link is left out.
+			[elsewhere("https://elsewhere.test/issue/X"), { status: "foreign_link", issue: null }],
+			[elsewhere("https://a:b@track.test/issue/X"), { status: "foreign_link", issue: null }],
+			[{}, { status: "invalid_response" }],
+		] as const) {
 			const fetcher = vi.fn(async () => Response.json(reply));
-			expect(await postEvent("https://track.test", "secret", "{}", fetcher)).toMatchObject({
-				status: "invalid_response",
-			});
+			expect(await postEvent("https://track.test", "secret", "{}", fetcher)).toEqual(answer);
 			expect(fetcher).toHaveBeenCalledWith(
 				"https://track.test/api/events",
 				expect.objectContaining({

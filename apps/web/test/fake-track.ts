@@ -40,6 +40,12 @@ export function startFakeTrack() {
 		eventStatus: 200,
 		loseReply: false,
 		noIssue: false,
+		/** The status for an open event alone; clears and dismissals still get `eventStatus`. */
+		openStatus: 0,
+		/** Keys whose events fail with a 503, as one event Track keeps failing on. */
+		failKeys: new Set<string>(),
+		retryAfter: "180",
+		issueOrigin: "https://track.test",
 		/** Answer `create_issue` with an HTTP error this many times first. */
 		failCreates: 0,
 		/** An admin set the agent to propose: what it asks for waits for a person. */
@@ -154,10 +160,15 @@ export function startFakeTrack() {
 		if (url.pathname === "/api/events" && request.method === "POST") {
 			const event = JSON.parse(body) as (typeof events)[number];
 			events.push(event);
-			if (behaviour.eventStatus !== 200)
+			const status = behaviour.failKeys.has(event.key)
+				? 503
+				: event.state === "open" && behaviour.openStatus
+					? behaviour.openStatus
+					: behaviour.eventStatus;
+			if (status !== 200)
 				return new Response(null, {
-					status: behaviour.eventStatus,
-					headers: { "retry-after": "180" },
+					status,
+					headers: { "retry-after": behaviour.retryAfter },
 				});
 			signals.set(event.key, event.state);
 			if (behaviour.loseReply) return new Response(null, { status: 503 });
@@ -166,7 +177,7 @@ export function startFakeTrack() {
 				filed: !behaviour.noIssue,
 				issue: behaviour.noIssue
 					? null
-					: { key: "SRC-1", url: "https://track.test/team/issue/SRC-1" },
+					: { key: "SRC-1", url: `${behaviour.issueOrigin}/team/issue/SRC-1` },
 			});
 		}
 		if (url.pathname !== "/mcp" || request.method !== "POST") {

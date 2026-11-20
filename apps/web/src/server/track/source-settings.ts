@@ -60,7 +60,7 @@ export async function saveSource(
 				SELECT ?,?,?,?,?,? WHERE EXISTS (SELECT 1 FROM track_integration WHERE organization_id=? AND source_mode=1 AND address=?)
 				ON CONFLICT(connection_id) DO UPDATE SET key_sealed=excluded.key_sealed,key_hint=excluded.key_hint,
 				key_digest=excluded.key_digest,generation=excluded.generation,guard_origin=excluded.guard_origin,
-				last_answer=NULL,answered_at=NULL,first_missing_at=NULL,stopped=0,lease=NULL,lease_until=NULL
+				last_answer=NULL,answered_at=NULL,first_missing_at=NULL,stopped=0,retry_at=NULL,lease=NULL,lease_until=NULL
                  WHERE key_digest <> excluded.key_digest`)
 				.bind(id, sealed, tokenHint(action.key), digest, generation, origin, workspaceId, address),
 			client

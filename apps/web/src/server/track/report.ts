@@ -8,28 +8,42 @@ import { eventBody, postEvent, type SignalState } from "./source-event";
 const { trackSource: source, trackIntegration, organization, connection, finding } = schema;
 const state = sql<SignalState>`CASE WHEN ${finding.dismissedAt} IS NOT NULL THEN 'dismissed'
 	WHEN ${finding.resolvedAt} IS NOT NULL THEN 'cleared' ELSE 'open' END`;
+/**
+ * Track allows 60 calls a minute, counted when they arrive. Guard counts when it sends, so it
+ * keeps a margin for the time a call takes.
+ */
+const CALLS_PER_MINUTE = 50;
+/** How long a connection waits after Track says it doesn't know the key. */
+const AFTER_UNKNOWN_KEY = 3_600_000;
 
 function nextFinding(db: Database, id: string) {
-	return db
-		.select()
-		.from(finding)
-		.where(
-			and(
-				eq(finding.connectionId, id),
-				isNull(finding.trackState),
-				sql`(${finding.sourceUnconfirmed} = 1 OR (
+	return (
+		db
+			.select()
+			.from(finding)
+			.where(
+				and(
+					eq(finding.connectionId, id),
+					isNull(finding.trackState),
+					sql`(${finding.sourceUnconfirmed} = 1 OR (
 			(${finding.sourceState} IS NOT NULL OR ${state} = 'open')
 			AND (${finding.sourceState} IS NOT ${state} OR ${finding.sourceSeverity} IS NOT ${finding.severity})
 			AND ${finding.sourceRejected} IS NOT (${state} || '/' || ${finding.severity})
 		))`,
-			),
-		)
-		.orderBy(
-			sql`CASE ${finding.severity} WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'moderate' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`,
-			finding.id,
-		)
-		.limit(1)
-		.get();
+				),
+			)
+			// A clear or a dismissal goes first: it never adds to Track's limits and may free one, so an
+			// open Track refuses cannot hold it back. A send that failed before goes after the rest, so
+			// one event Track keeps failing cannot hold back the others.
+			.orderBy(
+				sql`${state} = 'open'`,
+				sql`${finding.sourceUnconfirmed} = 1 AND ${finding.sourceAttemptAt} IS NOT NULL`,
+				sql`CASE ${finding.severity} WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'moderate' THEN 2 WHEN 'low' THEN 3 ELSE 4 END`,
+				finding.id,
+			)
+			.limit(1)
+			.get()
+	);
 }
 
 /** Each scan or dismissal drains current observations. A lease serializes overlapping callers. */
@@ -75,12 +89,12 @@ export async function reportFindings(
 			return;
 		}
 		let calls = claim.calls;
-		for (let attempts = 0; attempts < 60; attempts++) {
+		for (let attempts = 0; attempts < CALLS_PER_MINUTE; attempts++) {
 			const row = await nextFinding(db, id);
 			if (!row) return;
 			const time = Date.now();
 			calls = calls.filter((at) => at > time - 60_000);
-			if (calls.length >= 60) return;
+			if (calls.length >= CALLS_PER_MINUTE) return;
 			const current = row.dismissedAt ? "dismissed" : row.resolvedAt ? "cleared" : "open";
 			const sentAt = Math.max(
 				observedAt,
@@ -111,11 +125,13 @@ export async function reportFindings(
 			]);
 			if (!reservation.meta.changes) return;
 			const reply =
-				body === null ? { status: "400" as const } : await postEvent(target.address, key, body);
+				body === null
+					? { status: "too_large" as const }
+					: await postEvent(target.address, key, body);
 			const answeredAt = Date.now();
 			const note: Partial<typeof source.$inferInsert> = { lastAnswer: reply.status, answeredAt };
 			let receipt: Partial<typeof finding.$inferInsert>;
-			if ("issue" in reply && reply.status === "200") {
+			if (reply.status === "200" || reply.status === "foreign_link") {
 				note.firstMissingAt = null;
 				claim.firstMissingAt = null;
 				receipt = {
@@ -123,11 +139,17 @@ export async function reportFindings(
 					sourceSeverity: row.severity,
 					sourceRejected: null,
 					sourceUnconfirmed: 0,
-					trackIssueKey: reply.issue?.key ?? null,
-					trackIssueUrl: reply.issue?.url ?? null,
+					// No issue in an answer doesn't mean the one Guard links to is gone: a signal Track
+					// starts afresh, after a new key or once it expired, answers none for a clear.
+					...(reply.issue && { trackIssueKey: reply.issue.key, trackIssueUrl: reply.issue.url }),
 				};
-			} else if (reply.status === "400") {
-				console.warn("Track refused finding", row.id);
+			} else if (reply.status === "400" || reply.status === "too_large") {
+				if (reply.status === "400") {
+					// Track read the key, so it knows it: an earlier run of 404s has ended.
+					note.firstMissingAt = null;
+					claim.firstMissingAt = null;
+					console.warn("Track refused finding", row.id);
+				} else console.warn("Finding too large to send to Track", row.id);
 				receipt = {
 					sourceRejected: `${current}/${row.severity}`,
 					sourceUnconfirmed: 0,
@@ -137,6 +159,9 @@ export async function reportFindings(
 				if (reply.status === "404") {
 					note.firstMissingAt = claim.firstMissingAt ?? answeredAt;
 					note.stopped = Number(answeredAt - note.firstMissingAt >= 7 * 86_400_000);
+					// Each unknown key counts against Track's limit for Guard's address, which other
+					// workspaces share, so wait before asking again.
+					note.retryAt = answeredAt + AFTER_UNKNOWN_KEY;
 				}
 				await db.update(source).set(note).where(mine);
 				return;

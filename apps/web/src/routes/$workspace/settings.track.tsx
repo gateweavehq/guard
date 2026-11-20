@@ -35,6 +35,11 @@ const TEXT = {
 	lastAnswer: (answer: string, time: string) => `Last answer: ${answer} · ${time}`,
 	awaiting: "Waiting for a finding to report.",
 	memberSource: "This workspace reports findings automatically to Track.",
+	disconnect: "Stop reporting",
+	disconnectTitle: "Stop reporting findings to Track?",
+	disconnectBody:
+		"Guard forgets every source key and stops sending. The issues already made stay in Track, and their links stay on the findings. You can connect Track again afterwards, with source keys or an agent key.",
+	disconnected: "Guard no longer reports to Track.",
 	intro:
 		"File a finding as an issue in Gateweave Track, and ask Gateweave Agents to fix a dependency through it. Guard sends Track only what it found, never a token or a secret.",
 	privacy:
@@ -130,6 +135,7 @@ function TrackPage() {
 										address={sourceAddress ?? integration?.address ?? null}
 									/>
 								))}
+								{sourceAddress && <Disconnect />}
 							</section>
 						)}
 						{!sourceAddress && <TrackForm integration={integration} />}
@@ -142,6 +148,38 @@ function TrackPage() {
 			)}
 			<p className="text-sm text-muted-foreground">{TEXT.privacy}</p>
 		</section>
+	);
+}
+
+function Disconnect() {
+	const { slug } = useWorkspace();
+	const router = useRouter();
+	const [asking, setAsking] = useState(false);
+	async function disconnect() {
+		const result = await changeTrack(slug, { action: "remove" });
+		if (!result.ok) {
+			toast.error(result.error);
+			return;
+		}
+		toast.success(TEXT.disconnected);
+		await router.invalidate();
+	}
+	return (
+		<>
+			<LiveButton type="button" variant="outline" onClick={() => setAsking(true)}>
+				{TEXT.disconnect}
+			</LiveButton>
+			{asking && (
+				<ConfirmDialog
+					title={TEXT.disconnectTitle}
+					confirmLabel={TEXT.disconnect}
+					onConfirm={disconnect}
+					onClose={() => setAsking(false)}
+				>
+					{TEXT.disconnectBody}
+				</ConfirmDialog>
+			)}
+		</>
 	);
 }
 

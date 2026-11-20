@@ -181,13 +181,24 @@ describe("reporting findings to a Track source", () => {
 		const track = world.upstream.track;
 		track.behaviour.eventStatus = 404;
 		await save();
+		// Each unknown key counts against Track's limit for Guard's address, so Guard waits an hour.
+		const wait = await world.guard.db
+			.prepare("SELECT retry_at, answered_at FROM track_source")
+			.first<{ retry_at: number; answered_at: number }>();
+		expect(wait?.retry_at).toBe((wait?.answered_at ?? 0) + 3_600_000);
+		await world.scanDue([id]);
+		expect(track.events).toHaveLength(1);
+		const waited = () => world.guard.db.prepare("UPDATE track_source SET retry_at=0").run();
+		await waited();
 		await world.scanDue([id]);
 		expect(track.events).toHaveLength(2);
 		await world.guard.db
 			.prepare("UPDATE track_source SET first_missing_at=?")
 			.bind(Date.now() - 7 * 86400000)
 			.run();
+		await waited();
 		await world.scanDue([id]);
+		await waited();
 		await world.scanDue([id]);
 		expect(track.events).toHaveLength(3);
 		expect((await world.page(`/${world.slug}/settings/track`)).text).toContain(
@@ -235,9 +246,9 @@ describe("reporting findings to a Track source", () => {
 			.run();
 		await save();
 		expect(world.upstream.track.events).toHaveLength(0);
-		expect((await world.trackPage()).body.sources[0]?.lastAnswer).toBe("400");
+		expect((await world.trackPage()).body.sources[0]?.lastAnswer).toBe("too_large");
 		const log = () =>
-			world.guard.logs.filter((line) => line.message.includes("Track refused finding"));
+			world.guard.logs.filter((line) => line.message.includes("Finding too large to send"));
 		expect(log()).toHaveLength(1);
 		expect(log()[0]?.message).toContain(finding);
 		expect(log()[0]?.message).not.toContain("xxxxxxxxxxxx");
@@ -261,7 +272,7 @@ describe("reporting findings to a Track source", () => {
 			"cleared",
 		]);
 	});
-	it("spends at most sixty calls and resumes the remaining lower severity findings", async () => {
+	it("spends at most fifty calls a minute and resumes the remaining lower severity findings", async () => {
 		world.upstream.addAccount(
 			ACCOUNT_ID,
 			token,
@@ -275,12 +286,119 @@ describe("reporting findings to a Track source", () => {
 		await world.scanDue([id]);
 		await save();
 		const events = world.upstream.track.events;
-		expect(events).toHaveLength(60);
+		expect(events).toHaveLength(50);
 		expect(events[0]?.severity).toBe("critical");
 		await world.scanDue([id]);
-		expect(events).toHaveLength(60);
+		expect(events).toHaveLength(50);
 		await world.guard.db.prepare("UPDATE track_source SET calls='[]'").run();
 		await world.scanDue([id]);
 		expect(new Set(events.map((e) => e.key)).size).toBe(62);
+	});
+
+	it("sends a clear before an open Track refuses, so the refusal cannot hold it back", async () => {
+		const track = world.upstream.track;
+		await save();
+		track.behaviour.openStatus = 429;
+		world.upstream.addAccount(ACCOUNT_ID, token, [
+			{ ...insight, id: "two", subject: "other.test", severity: "Critical" },
+		]);
+		await world.scanDue([id]);
+		expect(track.events.map((e) => `${e.state}/${e.severity}`)).toEqual([
+			"open/medium",
+			"cleared/medium",
+			"open/critical",
+		]);
+	});
+
+	it("does not let one event Track keeps failing hold back the others", async () => {
+		const track = world.upstream.track;
+		world.upstream.addAccount(ACCOUNT_ID, token, [
+			{ ...insight, severity: "Critical" },
+			{ ...insight, id: "two", subject: "other.test", severity: "Low" },
+		]);
+		await world.scanDue([id]);
+		const rows = await world.findingRows(id);
+		track.behaviour.failKeys.add(
+			rows.find((row) => row.severity === "critical")?.fingerprint ?? "",
+		);
+		await save();
+		expect(track.events.map((e) => e.severity)).toEqual(["critical"]);
+		await world.scanDue([id]);
+		expect(track.events.map((e) => e.severity)).toEqual(["critical", "low", "critical"]);
+	});
+
+	it("confirms a state Track answers with a link elsewhere, without linking to it", async () => {
+		const track = world.upstream.track;
+		track.behaviour.issueOrigin = "https://elsewhere.test";
+		await save();
+		expect((await world.findingTrack(finding))?.track_issue_url).toBeNull();
+		expect((await world.trackPage()).body.sources[0]?.lastAnswer).toBe("foreign_link");
+		await world.scanDue([id]);
+		expect(track.events).toHaveLength(1);
+	});
+
+	it("keeps the issue link when an answer names no issue", async () => {
+		const track = world.upstream.track;
+		await save();
+		const linked = (await world.findingTrack(finding))?.track_issue_url;
+		expect(linked).toBe("https://track.test/team/issue/SRC-1");
+		// A new key may be another source, which starts the signal afresh and names no issue.
+		track.behaviour.noIssue = true;
+		await save(`gws_${"E".repeat(43)}`);
+		expect(track.events).toHaveLength(2);
+		expect((await world.findingTrack(finding))?.track_issue_url).toBe(linked);
+	});
+
+	it("waits at most a day for Retry-After, and a new key ends the wait", async () => {
+		const track = world.upstream.track;
+		track.behaviour.eventStatus = 429;
+		track.behaviour.retryAfter = "999999999";
+		await save();
+		const wait = await world.guard.db
+			.prepare("SELECT retry_at, answered_at FROM track_source")
+			.first<{ retry_at: number; answered_at: number }>();
+		expect(wait?.retry_at).toBe((wait?.answered_at ?? 0) + 86_400_000);
+		track.behaviour.eventStatus = 200;
+		await save(`gws_${"F".repeat(43)}`);
+		expect(track.events).toHaveLength(2);
+	});
+
+	it("ends a run of 404s when Track reads the key, even to refuse a finding", async () => {
+		const track = world.upstream.track;
+		track.behaviour.eventStatus = 404;
+		await save();
+		const missing = () =>
+			world.guard.db.prepare("SELECT first_missing_at FROM track_source").first("first_missing_at");
+		expect(await missing()).not.toBeNull();
+		await world.guard.db.prepare("UPDATE track_source SET retry_at=0").run();
+		track.behaviour.eventStatus = 400;
+		await world.scanDue([id]);
+		expect(track.events).toHaveLength(2);
+		expect(await missing()).toBeNull();
+	});
+
+	it("removes a workspace that reports through sources, so it can connect again either way", async () => {
+		await save();
+		expect((await world.page(`/${world.slug}/settings/track`)).text).toContain("Stop reporting");
+		expect((await world.changeTrack(world.owner, { action: "remove" })).status).toBe(200);
+		expect(await world.trackRow()).toBeNull();
+		expect(await world.guard.db.prepare("SELECT count(*) AS n FROM track_source").first("n")).toBe(
+			0,
+		);
+		world.upstream.track.addWorkspace(
+			"acme",
+			agent,
+			[{ key: "OPS", name: "Operations" }],
+			["agent"],
+		);
+		const legacy = {
+			action: "save",
+			address,
+			workspace: "acme",
+			team: "OPS",
+			key: agent,
+			fixLabel: "agent",
+		} as const;
+		expect((await world.changeTrack(world.owner, legacy)).status).toBe(200);
 	});
 });

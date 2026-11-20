@@ -338,21 +338,28 @@ After setup, a recorded scan, a dismissal or a restore, Guard posts pending find
 to Track's `/api/events`. The fingerprint names the signal. Dismissal takes precedence over
 resolution. Guard maps moderate to medium, sends plain-text facts and a link to the finding,
 and fits the serialized request within 16 KiB. Previously unseen findings start with an open
-observation. MCP claims, proposals and filings are excluded. A connection lease serializes sends
-and the last minute's call times enforce 60 requests per minute across scans. Higher severity
-findings go first. Remaining findings wait for another scan or change.
+observation. MCP claims, proposals and filings are excluded. A connection lease serializes sends,
+and the last minute's call times hold them to 50 a minute across scans: Track allows 60, counted
+when they arrive, and a call takes time. Clears and dismissals go first, since they never add to
+Track's limits and may free one, so an open that Track refuses cannot hold them back. Then come
+findings whose last send did not fail, by severity, and last those whose send failed, so one event
+Track keeps failing cannot hold back the rest. Remaining findings wait for another scan or change.
+A change made while another run is finishing also waits for the next scan or change.
 
-| Answer                                          | What Guard records and does                                                                                                                                                |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 200                                             | Saves the sent state and severity, replaces the issue link (possibly with null), and clears the 404 timer. Findings opens a returned issue on the configured Track origin. |
-| 400 or an event too large to send               | Logs the finding id and skips that state and severity until they change.                                                                                                   |
-| 404                                             | Remembers the first 404 since the last success. A further 404 at least seven days later stops this connection until an admin pastes a key.                                 |
-| 429                                             | Remembers the Retry-After deadline and defers this connection.                                                                                                             |
-| Network failure, invalid answer or server error | Leaves the attempt unconfirmed and retries the current observation at the next opportunity.                                                                                |
+| Answer                                          | What Guard records and does                                                                                                                                                                                                                                 |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 200                                             | Saves the sent state and severity, keeps the returned issue link (an answer with no issue leaves the link Guard has), and clears the 404 timer. A link on another origin than the configured one confirms the state but is not kept.                        |
+| 400                                             | Logs the finding id, skips that state and severity until they change, and clears the 404 timer, since Track read the key.                                                                                                                                   |
+| An event too large to send                      | Logs the finding id and skips that state and severity until they change, without calling Track.                                                                                                                                                             |
+| 404                                             | Remembers the first 404 since the last success and waits an hour before asking again, since each unknown key counts against Track's limit for Guard's address. A 404 at least seven days after the first stops this connection until an admin pastes a key. |
+| 429                                             | Waits until the Retry-After deadline, at most a day, and defers this connection. A new key ends the wait.                                                                                                                                                   |
+| Network failure, invalid answer or server error | Leaves the attempt unconfirmed and retries the current observation at the next opportunity.                                                                                                                                                                 |
 
-Settings shows the latest outcome and time. Guard marks an attempt unconfirmed before sending, so
-a lost response followed by a restore sends the open observation even if open was the last state
-Guard saw acknowledged. A replacement key replays known signals and keeps the rate window.
+Settings shows the latest outcome in words and its time. Guard marks an attempt unconfirmed before
+sending, so a lost response followed by a restore sends the open observation even if open was the
+last state Guard saw acknowledged. A replacement key replays known signals and keeps the rate
+window. "Stop reporting" removes every source key and the workspace's Track address, which lets it
+connect again either way, to any address; issue links stay on the findings.
 
 #### Manual filing over MCP
 
