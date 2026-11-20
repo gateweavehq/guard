@@ -11,6 +11,7 @@ import { KEPT_SCANS } from "../db/connections-schema";
 import { raisedAtFor } from "../notifications/rules";
 import { isSealer, sealerFor } from "../secrets";
 import type { SecretsKeySettings } from "../secrets-key";
+import { reportAfterChange } from "../track/report";
 import { dependencyFindings, insightFindings, type PresentFinding } from "./findings";
 import { type ProtectionRead, readConnectionProtection, unstoredProtection } from "./protection";
 import { tokenPlace } from "./tokens";
@@ -210,6 +211,18 @@ export async function runScan(
 	deps: ScanDeps,
 	connectionId: string,
 	{ onlyDue = false, now = Date.now() }: { onlyDue?: boolean; now?: number } = {},
+): Promise<ScanRun> {
+	const result = await scanConnection(deps, connectionId, onlyDue, now);
+	if (result.state === "recorded")
+		await reportAfterChange(deps.db, deps.settings, connectionId, now);
+	return result;
+}
+
+async function scanConnection(
+	deps: ScanDeps,
+	connectionId: string,
+	onlyDue: boolean,
+	now: number,
 ): Promise<ScanRun> {
 	const { db } = deps;
 	const connection = await claim(db, connectionId, now, onlyDue);

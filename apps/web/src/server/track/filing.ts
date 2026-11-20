@@ -1,5 +1,5 @@
 import { env } from "cloudflare:workers";
-import { and, eq, isNull, lt, or } from "drizzle-orm";
+import { and, eq, isNull, lt, or, sql } from "drizzle-orm";
 import type { TrackLinkView } from "../../lib/track-schemas";
 import { db } from "../auth";
 import { schema } from "../db";
@@ -82,7 +82,9 @@ export async function fileFinding(request: FilingRequest): Promise<FilingResult>
 		.where(and(eq(finding.id, findingId), eq(finding.organizationId, workspaceId)))
 		.get();
 	if (!row) return refuse("Not found", 404);
-	if (!integration) {
+	if (!row.trackState && row.trackIssueUrl)
+		return refuse("Open the issue already reported to Track.", 409);
+	if (!integration || integration.sourceMode) {
 		return refuse(
 			"Gateweave Track isn't connected to this workspace. An owner or admin can do that in Settings.",
 			409,
@@ -142,6 +144,8 @@ export async function fileFinding(request: FilingRequest): Promise<FilingResult>
 				and(
 					eq(finding.id, findingId),
 					eq(finding.organizationId, workspaceId),
+					isNull(finding.trackIssueUrl),
+					sql`EXISTS (SELECT 1 FROM ${trackIntegration} WHERE ${trackIntegration.organizationId} = ${workspaceId} AND ${trackIntegration.sourceMode} = 0)`,
 					isNull(finding.resolvedAt),
 					isNull(finding.dismissedAt),
 					or(

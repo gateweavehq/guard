@@ -186,6 +186,20 @@ it, every connection needs a new token.
 
 ### Gateweave Track, and a fix from Agents
 
+For automatic reporting, make a source in Track's Settings > Sources for each Guard connection.
+Choose product `guard`, the destination team and a lowest severity (Track defaults to high). Add
+the exact Guard origin shown in Guard's Track settings to the source's link origins. Leave
+"close when cleared" off unless fixed findings should complete their issue. For a repository,
+you can set an assignee in Track.
+
+Paste the source key beside the corresponding connection in Guard's Track settings. Enter the
+Track HTTPS origin on first setup. Guard seals the key under `SECRETS_KEY`. Switching a workspace
+to automatic reporting removes its agent key and fix label while preserving existing issue links.
+Settings shows the last answer per connection. After seven days of unknown-key responses Guard
+stops sending for that connection. Paste a replacement key to resume. "Stop reporting" forgets every source key and the Track address, so the workspace can connect again with source keys or an agent key, to any address.
+
+#### Manual filing
+
 Findings can be filed as issues in a Gateweave Track, and dependency findings sent on to Gateweave
 Agents for a pull request. An owner or admin sets it up under Settings, Gateweave Track. It needs
 `SECRETS_KEY`, which seals the key, and nothing else on the server.

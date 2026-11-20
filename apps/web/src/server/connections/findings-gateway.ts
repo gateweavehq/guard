@@ -1,3 +1,4 @@
+import { env } from "cloudflare:workers";
 import { and, count, eq, gt, isNotNull, isNull, type SQL, sql } from "drizzle-orm";
 import type { z } from "zod";
 import {
@@ -15,6 +16,7 @@ import { schema } from "../db";
 import { countNewFindings, findingsSeenAt, markFindingsSeen } from "../notifications/seen";
 import { appOrigin } from "../origin";
 import { fileFinding } from "../track/filing";
+import { reportAfterChange } from "../track/report";
 
 /** The most findings a page lists. A scan of a repository with more is a problem to fix at its root. */
 export const MAX_LISTED_FINDINGS = 500;
@@ -126,7 +128,7 @@ export async function findingsOf(
 			.where(eq(connection.organizationId, workspaceId))
 			.get(),
 		db
-			.select({ fixLabel: trackIntegration.fixLabel })
+			.select({ sourceMode: trackIntegration.sourceMode, fixLabel: trackIntegration.fixLabel })
 			.from(trackIntegration)
 			.where(eq(trackIntegration.organizationId, workspaceId))
 			.get(),
@@ -137,7 +139,11 @@ export async function findingsOf(
 		total: total?.n ?? 0,
 		seenAt,
 		loadedAt,
-		track: { configured: integration !== undefined, canAskFix: Boolean(integration?.fixLabel) },
+		track: {
+			...(integration?.sourceMode && { sourceMode: true }),
+			configured: !!integration && !integration.sourceMode,
+			canAskFix: Boolean(integration?.fixLabel),
+		},
 		findings: rows.map(
 			({
 				resolvedAt,
@@ -149,14 +155,15 @@ export async function findingsOf(
 				...row
 			}): FindingView => ({
 				...row,
-				track: trackState
-					? {
-							state: trackState,
-							key: trackIssueKey,
-							url: trackIssueUrl,
-							fixRequested: fixRequestedAt !== null,
-						}
-					: null,
+				track:
+					trackState || trackIssueUrl
+						? {
+								state: trackState ?? "filed",
+								key: trackIssueKey,
+								url: trackIssueUrl,
+								fixRequested: fixRequestedAt !== null,
+							}
+						: null,
 				firstSeenAt: row.firstSeenAt.getTime(),
 				lastSeenAt: row.lastSeenAt.getTime(),
 				raisedAt: row.raisedAt,
@@ -247,26 +254,22 @@ export async function changeFindingsAs(
 	const { finding } = schema;
 	const mine = and(eq(finding.id, action.id), eq(finding.organizationId, workspaceId));
 
-	if (action.action === "dismiss") {
-		const changed = await db
-			.update(finding)
-			.set({
-				dismissedAt: new Date(),
-				dismissedBy: member.user.id,
-				dismissReason: action.reason,
-			})
-			.where(and(mine, isNull(finding.dismissedAt)))
-			.returning({ id: finding.id })
-			.all();
-		if (changed.length > 0) return { ok: true };
-	} else {
-		const changed = await db
-			.update(finding)
-			.set({ dismissedAt: null, dismissedBy: null, dismissReason: null })
-			.where(and(mine, isNotNull(finding.dismissedAt)))
-			.returning({ id: finding.id })
-			.all();
-		if (changed.length > 0) return { ok: true };
+	const at = Date.now();
+	const dismiss = action.action === "dismiss";
+	const changed = await db
+		.update(finding)
+		.set({
+			sourceChangedAt: at,
+			dismissedAt: dismiss ? new Date(at) : null,
+			dismissedBy: dismiss ? member.user.id : null,
+			dismissReason: dismiss ? action.reason : null,
+		})
+		.where(and(mine, dismiss ? isNull(finding.dismissedAt) : isNotNull(finding.dismissedAt)))
+		.returning({ connectionId: finding.connectionId })
+		.get();
+	if (changed) {
+		await reportAfterChange(db, env, changed.connectionId, at);
+		return { ok: true };
 	}
 	// Either it isn't this workspace's, or it already is as asked.
 	const exists = await db.select({ id: finding.id }).from(finding).where(mine).get();
@@ -329,14 +332,15 @@ export async function findingOf(member: Acting, id: string): Promise<FindingDeta
 	} = row;
 	return {
 		...rest,
-		track: trackState
-			? {
-					state: trackState,
-					key: trackIssueKey,
-					url: trackIssueUrl,
-					fixRequested: fixRequestedAt !== null,
-				}
-			: null,
+		track:
+			trackState || trackIssueUrl
+				? {
+						state: trackState ?? "filed",
+						key: trackIssueKey,
+						url: trackIssueUrl,
+						fixRequested: fixRequestedAt !== null,
+					}
+				: null,
 		firstSeenAt: row.firstSeenAt.getTime(),
 		lastSeenAt: row.lastSeenAt.getTime(),
 		dismissedAt: dismissedAt?.getTime() ?? null,

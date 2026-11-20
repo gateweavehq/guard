@@ -146,6 +146,12 @@ export const finding = sqliteTable(
 		trackState: text("track_state", { enum: TRACK_STATES }),
 		trackIssueKey: text("track_issue_key"),
 		trackIssueUrl: text("track_issue_url"),
+		sourceState: text("source_state"),
+		sourceSeverity: text("source_severity"),
+		sourceRejected: text("source_rejected"),
+		sourceUnconfirmed: integer("source_unconfirmed").notNull().default(0),
+		sourceAttemptAt: integer("source_attempt_at"),
+		sourceChangedAt: integer("source_changed_at"),
 		trackFiledAt: integer("track_filed_at", { mode: "timestamp_ms" }),
 		/** The member's user id. Not a foreign key, as `connection.added_by`. */
 		trackFiledBy: text("track_filed_by"),
@@ -424,6 +430,7 @@ export const trackIntegration = sqliteTable("track_integration", {
 		.references(() => organization.id, { onDelete: "cascade" }),
 	/** Track's origin, such as `https://track.gateweave.com`. */
 	address: text("address").notNull(),
+	sourceMode: integer("source_mode").notNull().default(0),
 	/** The Track workspace's slug, and the key of the team issues go to. */
 	workspaceSlug: text("workspace_slug").notNull(),
 	teamKey: text("team_key").notNull(),
@@ -441,4 +448,24 @@ export const trackIntegration = sqliteTable("track_integration", {
 	/** When Track last answered a check or a filing, and how it went: `ok` or a failure kind. */
 	lastCheckAt: integer("last_check_at", { mode: "timestamp_ms" }),
 	lastCheckOutcome: text("last_check_outcome"),
+});
+
+/** Delivery status belongs to a connection. Replacing a key fences out an older sender. */
+export const trackSource = sqliteTable("track_source", {
+	connectionId: text("connection_id")
+		.primaryKey()
+		.references(() => connection.id, { onDelete: "cascade" }),
+	keySealed: text("key_sealed").notNull(),
+	keyHint: text("key_hint").notNull(),
+	keyDigest: text("key_digest").notNull().unique(),
+	generation: text("generation").notNull(),
+	guardOrigin: text("guard_origin").notNull(),
+	lastAnswer: text("last_answer"),
+	answeredAt: integer("answered_at"),
+	firstMissingAt: integer("first_missing_at"),
+	stopped: integer("stopped").notNull().default(0),
+	retryAt: integer("retry_at"),
+	calls: text("calls", { mode: "json" }).$type<number[]>().notNull().default([]),
+	lease: text("lease"),
+	leaseUntil: integer("lease_until"),
 });

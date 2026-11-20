@@ -33,7 +33,19 @@ export function startFakeTrack() {
 	const calls: TrackCall[] = [];
 	/** Everything that reached the endpoint: its headers and body, as text. */
 	const requests: { headers: Record<string, string>; body: string }[] = [];
+	const events: { key: string; state: string; severity: string; sentAt: string; url: string }[] =
+		[];
+	const signals = new Map<string, string>();
 	const behaviour = {
+		eventStatus: 200,
+		loseReply: false,
+		noIssue: false,
+		/** The status for an open event alone; clears and dismissals still get `eventStatus`. */
+		openStatus: 0,
+		/** Keys whose events fail with a 503, as one event Track keeps failing on. */
+		failKeys: new Set<string>(),
+		retryAfter: "180",
+		issueOrigin: "https://track.test",
 		/** Answer `create_issue` with an HTTP error this many times first. */
 		failCreates: 0,
 		/** An admin set the agent to propose: what it asks for waits for a person. */
@@ -145,6 +157,29 @@ export function startFakeTrack() {
 		const url = new URL(request.url);
 		const body = await request.text();
 		requests.push({ headers: Object.fromEntries(request.headers), body });
+		if (url.pathname === "/api/events" && request.method === "POST") {
+			const event = JSON.parse(body) as (typeof events)[number];
+			events.push(event);
+			const status = behaviour.failKeys.has(event.key)
+				? 503
+				: event.state === "open" && behaviour.openStatus
+					? behaviour.openStatus
+					: behaviour.eventStatus;
+			if (status !== 200)
+				return new Response(null, {
+					status,
+					headers: { "retry-after": behaviour.retryAfter },
+				});
+			signals.set(event.key, event.state);
+			if (behaviour.loseReply) return new Response(null, { status: 503 });
+			return Response.json({
+				state: event.state,
+				filed: !behaviour.noIssue,
+				issue: behaviour.noIssue
+					? null
+					: { key: "SRC-1", url: `${behaviour.issueOrigin}/team/issue/SRC-1` },
+			});
+		}
 		if (url.pathname !== "/mcp" || request.method !== "POST") {
 			return new Response("Not found", { status: 404 });
 		}
@@ -183,6 +218,8 @@ export function startFakeTrack() {
 
 	return {
 		host: "track.test",
+		events,
+		signals,
 		handler,
 		behaviour,
 		issues,

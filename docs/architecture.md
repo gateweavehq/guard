@@ -323,6 +323,46 @@ has no button and no unsubscribe link, and says where to change the setting inst
 
 ### Actions: a finding in Gateweave Track, and a fix from Agents
 
+Guard can report findings automatically to a Track source. An owner or admin saves one source key
+per repository or Cloudflare account connection. All sources use the workspace's Track HTTPS origin.
+Saving the first source switches the workspace to source mode and erases the sealed agent key, its
+hint and the fix label in the same D1 batch. Existing MCP issues and proposals keep their links.
+Manual filing and the Agents label action are available only in workspaces still using an agent key.
+
+Each source key is sealed under the workspace key with the connection id as additional data. The
+daily secret rotation includes these keys. A digest prevents accidental reuse of a key between
+connections. Only admins see its four-character hint. Guard stores its own origin at setup so an
+hourly scan can link to Findings without an incoming request.
+
+After setup, a recorded scan, a dismissal or a restore, Guard posts pending findings one at a time
+to Track's `/api/events`. The fingerprint names the signal. Dismissal takes precedence over
+resolution. Guard maps moderate to medium, sends plain-text facts and a link to the finding,
+and fits the serialized request within 16 KiB. Previously unseen findings start with an open
+observation. MCP claims, proposals and filings are excluded. A connection lease serializes sends,
+and the last minute's call times hold them to 50 a minute across scans: Track allows 60, counted
+when they arrive, and a call takes time. Clears and dismissals go first, since they never add to
+Track's limits and may free one, so an open that Track refuses cannot hold them back. Then come
+findings whose last send did not fail, by severity, and last those whose send failed, so one event
+Track keeps failing cannot hold back the rest. Remaining findings wait for another scan or change.
+A change made while another run is finishing also waits for the next scan or change.
+
+| Answer                                          | What Guard records and does                                                                                                                                                                                                                                 |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 200                                             | Saves the sent state and severity, keeps the returned issue link (an answer with no issue leaves the link Guard has), and clears the 404 timer. A link on another origin than the configured one confirms the state but is not kept.                        |
+| 400                                             | Logs the finding id, skips that state and severity until they change, and clears the 404 timer, since Track read the key.                                                                                                                                   |
+| An event too large to send                      | Logs the finding id and skips that state and severity until they change, without calling Track.                                                                                                                                                             |
+| 404                                             | Remembers the first 404 since the last success and waits an hour before asking again, since each unknown key counts against Track's limit for Guard's address. A 404 at least seven days after the first stops this connection until an admin pastes a key. |
+| 429                                             | Waits until the Retry-After deadline, at most a day, and defers this connection. A new key ends the wait.                                                                                                                                                   |
+| Network failure, invalid answer or server error | Leaves the attempt unconfirmed and retries the current observation at the next opportunity.                                                                                                                                                                 |
+
+Settings shows the latest outcome in words and its time. Guard marks an attempt unconfirmed before
+sending, so a lost response followed by a restore sends the open observation even if open was the
+last state Guard saw acknowledged. A replacement key replays known signals and keeps the rate
+window. "Stop reporting" removes every source key and the workspace's Track address, which lets it
+connect again either way, to any address; issue links stay on the findings.
+
+#### Manual filing over MCP
+
 A finding is fixed where a team plans its work. An owner or admin connects the workspace to **one
 Gateweave Track** in Settings, Gateweave Track (`/api/track/<workspace>`,
 `apps/web/src/server/track/gateway.ts`): Track's address, the Track workspace's slug, the key of the
