@@ -1,5 +1,3 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join, resolve } from "node:path";
 import {
 	Client,
 	type OAuthClientInformationMixed,
@@ -9,6 +7,7 @@ import {
 } from "@modelcontextprotocol/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { HOURLY, origin, startWorld, type World } from "./connections-world";
+import { serverFnUrl } from "./server-fn-url";
 import { ACCOUNT_ID, OTHER_ACCOUNT_ID } from "./upstreams";
 
 // A query of D1 that failed for good, in the Worker as it deploys. Drizzle's error for it is
@@ -121,16 +120,6 @@ async function count(table: string, where = "1 = 1") {
 
 // Server functions, called as the browser does: the workspace's pages are not rendered on the
 // server, so their reads fail in the answer to one of these.
-const assets = join(resolve(import.meta.dirname, ".."), "dist/server/assets");
-function serverFnUrl(name: string) {
-	for (const file of readdirSync(assets).filter((each) => each.endsWith(".js"))) {
-		const id = new RegExp(
-			`"([0-9a-f]{64})": \\{\\s*functionName: "${name}_createServerFn_handler"`,
-		).exec(readFileSync(join(assets, file), "utf8"))?.[1];
-		if (id) return `${origin}/_serverFn/${id}`;
-	}
-	throw new Error(`No server function ${name} in the build`);
-}
 
 /** Calls a GET server function with one string, or with nothing, and answers what came back. */
 async function serverFn(name: string, cookie: string, data?: string) {

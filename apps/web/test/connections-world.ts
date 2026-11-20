@@ -27,6 +27,8 @@ let workspaces = 0;
 export async function startWorld(
 	options: {
 		isolates?: number;
+		beforeClaim?: () => Promise<void>;
+		sourceBatch?: (phase: "before" | "after") => Promise<void>;
 		settings?: Record<string, string>;
 		isolateSettings?: Record<string, string>[];
 		/** Without it, the server cannot keep tokens. */
@@ -37,6 +39,8 @@ export async function startWorld(
 	const key = randomBytes(32).toString("base64");
 	const guard = await startGuard(origin, {
 		hosts: upstream.hosts,
+		beforeClaim: options.beforeClaim,
+		sourceBatch: options.sourceBatch,
 		isolates: options.isolates ?? 1,
 		isolateSettings: options.isolateSettings ?? [],
 		settings: {

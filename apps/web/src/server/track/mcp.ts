@@ -65,7 +65,7 @@ const brief = (text: string) => {
 	return line.length > MAX_MESSAGE ? `${line.slice(0, MAX_MESSAGE - 1)}…` : line;
 };
 
-async function readCapped(response: Response): Promise<string> {
+export async function readCapped(response: Response, limit = MAX_ANSWER_BYTES): Promise<string> {
 	const reader = response.body?.getReader();
 	if (!reader) return "";
 	const decoder = new TextDecoder();
@@ -75,7 +75,7 @@ async function readCapped(response: Response): Promise<string> {
 		const { done, value } = await reader.read();
 		if (done) break;
 		bytes += value.byteLength;
-		if (bytes > MAX_ANSWER_BYTES) {
+		if (bytes > limit) {
 			await reader.cancel();
 			throw new TrackError("invalid_response", "Track's answer was too large");
 		}

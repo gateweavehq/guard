@@ -31,12 +31,24 @@ export function startFakeTrack() {
 	const workspaces = new Map<string, FakeTrackWorkspace>();
 	const issues: FakeTrackIssue[] = [];
 	const calls: TrackCall[] = [];
+	const sources = new Map<string, { received: boolean }>();
+	const undoTokens = new Map<string, { key: string; until: number }>();
+	const sourceKeys: string[] = [];
+	const approvals = new Map<string, { name: string; challenge: string; expiresAt: number }>();
+	const exchanges: { code: string; verifier: string }[] = [];
+	const undos: string[] = [];
 	/** Everything that reached the endpoint: its headers and body, as text. */
 	const requests: { headers: Record<string, string>; body: string }[] = [];
 	const events: { key: string; state: string; severity: string; sentAt: string; url: string }[] =
 		[];
 	const signals = new Map<string, string>();
 	const behaviour = {
+		exchangeFault: "",
+		undoStatus: 200,
+		oversizedUndo: false,
+		undoUntil: null as string | null,
+		holdUndo: null as Promise<void> | null,
+		holdExchange: null as Promise<void> | null,
 		eventStatus: 200,
 		loseReply: false,
 		noIssue: false,
@@ -157,6 +169,85 @@ export function startFakeTrack() {
 		const url = new URL(request.url);
 		const body = await request.text();
 		requests.push({ headers: Object.fromEntries(request.headers), body });
+		if (request.method === "POST" && url.pathname === "/api/connect/exchange") {
+			const input = JSON.parse(body) as { code: string; verifier: string };
+			exchanges.push(input);
+			const approval = approvals.get(input.code);
+			approvals.delete(input.code);
+			const digest = await crypto.subtle.digest(
+				"SHA-256",
+				new TextEncoder().encode(input.verifier),
+			);
+			if (
+				!/^[A-Za-z0-9_-]{43}$/.test(input.code) ||
+				!/^[A-Za-z0-9._~-]{43,128}$/.test(input.verifier) ||
+				!approval ||
+				approval.expiresAt <= Date.now() ||
+				Buffer.from(digest).toString("base64url") !== approval.challenge
+			)
+				return Response.json({ error: "invalid_code" }, { status: 400 });
+			await behaviour.holdExchange;
+			const fault = behaviour.exchangeFault;
+			if (fault === "rate limit")
+				return Response.json(
+					{ error: "too_many_requests" },
+					{ status: 429, headers: { "retry-after": behaviour.retryAfter } },
+				);
+			if (fault === "redirect") return Response.redirect("https://track.test/unexpected", 307);
+			if (fault === "timeout") await new Promise((resolve) => setTimeout(resolve, 11_000));
+			const key = `gws_${Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url")}`;
+			sourceKeys.push(key);
+			const undo = crypto.randomUUID();
+			const undoUntil = behaviour.undoUntil ?? new Date(Date.now() + 3 * 86400000).toISOString();
+			undoTokens.set(undo, { key, until: Date.parse(undoUntil) });
+			sources.set(key, { received: false });
+			return Response.json({
+				sourceKey: fault === "key" ? "bad" : key,
+				endpoint:
+					fault === "endpoint" ? "https://other.test/api/events" : `${url.origin}/api/events`,
+				source: {
+					id: crypto.randomUUID(),
+					name: fault === "name" ? "other" : approval.name,
+					product: fault === "product" ? "other" : "guard",
+				},
+				workspace: { id: "ws", slug: "acme", name: "Acme" },
+				team: { id: "ops", key: "OPS", name: "Operations" },
+				undo: fault === "long undo" ? "x".repeat(513) : undo,
+				undoUntil:
+					fault === "bad deadline"
+						? "tomorrow"
+						: fault === "missing deadline"
+							? undefined
+							: undoUntil,
+				padding: fault === "oversized" ? "界".repeat(6000) : undefined,
+			});
+		}
+		if (request.method === "POST" && url.pathname === "/api/connect/undo") {
+			const { undo } = JSON.parse(body) as { undo: string };
+			undos.push(undo);
+			await behaviour.holdUndo;
+			if (behaviour.undoStatus === 429)
+				return Response.json(
+					{ error: "too_many_requests" },
+					{ status: 429, headers: { "retry-after": behaviour.retryAfter } },
+				);
+			if (behaviour.undoStatus === 500)
+				return Response.json({ error: "try_again" }, { status: 500 });
+			const found = undoTokens.get(undo);
+			if (!found || found.until <= Date.now() || behaviour.undoStatus === 400)
+				return Response.json(
+					{
+						error: "invalid_undo",
+						padding: behaviour.oversizedUndo ? "界".repeat(6000) : undefined,
+					},
+					{ status: 400 },
+				);
+			if (!sources.get(found.key)?.received) sources.delete(found.key);
+			return Response.json({
+				ok: true,
+				padding: behaviour.oversizedUndo ? "界".repeat(6000) : undefined,
+			});
+		}
 		if (url.pathname === "/api/events" && request.method === "POST") {
 			const event = JSON.parse(body) as (typeof events)[number];
 			events.push(event);
@@ -170,6 +261,10 @@ export function startFakeTrack() {
 					status,
 					headers: { "retry-after": behaviour.retryAfter },
 				});
+			const key = request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "";
+			const source = sources.get(key);
+			if (source) source.received = true;
+			else if (sourceKeys.includes(key)) return new Response(null, { status: 404 });
 			signals.set(event.key, event.state);
 			if (behaviour.loseReply) return new Response(null, { status: 503 });
 			return Response.json({
@@ -218,6 +313,19 @@ export function startFakeTrack() {
 
 	return {
 		host: "track.test",
+		approve(url: URL) {
+			const code = Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
+			approvals.set(code, {
+				expiresAt: Date.now() + 60_000,
+				name: url.searchParams.get("name") ?? "",
+				challenge: url.searchParams.get("challenge") ?? "",
+			});
+			return code;
+		},
+		sources,
+		sourceKeys,
+		undos,
+		exchanges,
 		events,
 		signals,
 		handler,
@@ -229,7 +337,7 @@ export function startFakeTrack() {
 		addWorkspace(
 			slug: string,
 			key: string,
-			teams: { key: string; name: string }[] = [{ key: "GRD", name: "Guard" }],
+			teams: { key: string; name: string }[] = [{ key: "DEMO", name: "Guard" }],
 			labels: string[] = [],
 		) {
 			const workspace: FakeTrackWorkspace = { teams, labels };

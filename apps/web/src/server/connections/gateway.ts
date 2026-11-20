@@ -16,8 +16,10 @@ import { db } from "../auth";
 import { schema } from "../db";
 import { refusedBy, refusedByUnique } from "../db/query-failure";
 import { appOrigin } from "../origin";
+import { sealerForWrite } from "../primary-key";
 import { allowConnect, allowScanNow } from "../rate-limit";
 import { isSealer, sealerFor } from "../secrets";
+import { supersedeApprovals } from "../track/source-settings";
 import { checkCloudflare, checkGithub } from "./check";
 import { runScan, type ScanResult, type ScanRun, upstreamOptions } from "./scan";
 import { tokenHint, tokenPlace } from "./tokens";
@@ -205,11 +207,13 @@ export async function changeConnections(request: Request, slug: string): Promise
 		case "remove": {
 			const { connection } = schema;
 			// Its token, findings and scans go with it, by cascade.
-			const removed = await db
-				.delete(connection)
-				.where(and(eq(connection.id, action.id), eq(connection.organizationId, workspaceId)))
-				.returning({ id: connection.id })
-				.all();
+			const [removed] = await db.batch([
+				db
+					.delete(connection)
+					.where(and(eq(connection.id, action.id), eq(connection.organizationId, workspaceId)))
+					.returning({ id: connection.id }),
+				...supersedeApprovals(workspaceId, action.id),
+			]);
 			return removed.length > 0 ? answer({ ok: true }) : notFound();
 		}
 	}
@@ -220,7 +224,7 @@ async function connect(
 	workspaceId: string,
 	userId: string,
 ): Promise<Response> {
-	const sealer = await sealerFor(env, workspaceId);
+	const sealer = await sealerForWrite(db, env, workspaceId);
 	if (!isSealer(sealer)) return refused(sealer.unavailable);
 	const { connection } = schema;
 
@@ -312,7 +316,7 @@ async function replaceToken(
 	action: Extract<Action, { action: "replace-token" }>,
 	workspaceId: string,
 ): Promise<Response> {
-	const sealer = await sealerFor(env, workspaceId);
+	const sealer = await sealerForWrite(db, env, workspaceId);
 	if (!isSealer(sealer)) return refused(sealer.unavailable);
 	const { connection } = schema;
 	const one = await db

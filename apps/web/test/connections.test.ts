@@ -1197,7 +1197,9 @@ describe("a changed SECRETS_KEY", () => {
 			expect(after).not.toContain(token);
 			expect(
 				world.guard.logs.some(
-					(log) => log.message === 'secrets: {"resealed":1,"unopened":1,"left":1}',
+					(log) =>
+						log.message ===
+						`secrets: primary=${newId} previous=${before.split(".")[1]} resealed=1 unopened=1 left=1 settled=false`,
 				),
 			).toBe(true);
 			// The new key opens it: a scan from the second copy works.

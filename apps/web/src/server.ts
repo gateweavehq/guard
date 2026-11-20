@@ -8,6 +8,7 @@ import { handleMcpRequest, isMcpRequest } from "./server/mcp";
 import { sendAlerts, sendDigests } from "./server/notifications/send";
 import { resealSecrets } from "./server/reseal-secrets";
 import { newNonce, withSecurityHeaders } from "./server/security-headers";
+import { sweepConnect } from "./server/track/connect";
 
 export { RateLimiter } from "./server/rate-limit";
 
@@ -75,6 +76,7 @@ export default {
 	// Once a day, clears what is past its time and, after SECRETS_KEY changed, seals workspaces'
 	// secrets again under it.
 	async scheduled(controller) {
+		const startedAt = Date.now();
 		if (controller.cron === SCAN_CRON) {
 			const scans = await scanDue({ db, settings: env });
 			// Counts only: a connection's name or target is the workspace's own business.
@@ -82,11 +84,25 @@ export default {
 			await notify(controller.scheduledTime);
 			return;
 		}
-		await pruneExpired(db);
-		const secrets = await resealSecrets(db, env);
-		// Counts only. While `left` isn't 0, SECRETS_KEY_PREVIOUS is still needed.
-		if (secrets && (secrets.resealed > 0 || secrets.left > 0)) {
-			(secrets.unopened > 0 ? console.error : console.log)(`secrets: ${JSON.stringify(secrets)}`);
+		try {
+			await pruneExpired(db);
+		} catch {
+			console.error("prune: failed");
+		}
+		try {
+			const secrets = await resealSecrets(db, env, startedAt);
+			if (secrets) {
+				(secrets.unopened > 0 ? console.error : console.log)(
+					`secrets: primary=${secrets.primary} previous=${secrets.previous ?? "none"} resealed=${secrets.resealed} unopened=${secrets.unopened} left=${secrets.left} settled=${secrets.settled}`,
+				);
+			}
+		} catch {
+			console.error("secrets: failed");
+		}
+		try {
+			await sweepConnect();
+		} catch {
+			console.error("Track cleanup failed");
 		}
 	},
 } satisfies ExportedHandler<Cloudflare.Env>;

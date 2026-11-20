@@ -11,6 +11,7 @@
 		"dev": "pnpm --filter @gateweave/guard-web dev",
 		"dev:setup": "pnpm --filter @gateweave/guard-web dev:setup",
 		"doctor": "node scripts/doctor.mjs",
+		"secrets:key-id": "node scripts/secrets-key-id.mjs",
 		"build": "pnpm -r build",
 		"deploy": "pnpm --filter @gateweave/guard-web run deploy",
 		"wrangler": "pnpm --filter @gateweave/guard-web exec wrangler --cwd ../..",

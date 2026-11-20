@@ -81,7 +81,9 @@ Findings screens, and the schemas both agree on are in `apps/web/src/lib/connect
   After the key changes, the daily run seals each token again under the new key
   (`reseal-secrets.ts`: up to 500 a run, in pages so tokens that open with neither key never hold up
   the rest, each written only if it is still the value that was read), and logs `secrets:` with
-  counts only. Without a usable `SECRETS_KEY`, connecting is refused with the reason and the page
+  both key ids, counts and whether rotation has settled. With a previous key set, a run settles
+  when it reseals nothing, zero values remain, and Guard first saw this key pair at least an hour
+  before the run started. Without a usable `SECRETS_KEY`, connecting is refused with the reason and the page
   says the server is not set up for it. A token is opened only inside a scan or a check, never
   returned: pages get `token_hint`, its last four characters. Nothing logs a token, and
   `packages/scan`'s errors carry the status and no body.
@@ -328,6 +330,35 @@ per repository or Cloudflare account connection. All sources use the workspace's
 Saving the first source switches the workspace to source mode and erases the sealed agent key, its
 hint and the fix label in the same D1 batch. Existing MCP issues and proposals keep their links.
 Manual filing and the Agents label action are available only in workspaces still using an agent key.
+
+With **Connect Track**, Guard sends the connection name, its own origin, a return address, a random
+state and a PKCE challenge to Track. A pending `track_connect` row keeps the state's SHA-256 hash,
+the sealed verifier, the name and Track origin, the connection, workspace and user ids, and a
+ten-minute expiry. Starting again replaces the connection's pending request.
+
+The return page clears its query from browser history and submits a same-origin POST. Guard checks
+the original user's session, their current admin or owner role, connection ownership and expiry.
+Denial consumes the request. Approval changes a pending row to exchanging and gives it ten
+minutes for recovery. Guard exchanges the code and verifier at the original Track origin, with a
+ten-second timeout and redirects disabled. Guard checks the event endpoint, product, requested
+name and key format. The team and workspace names are for display.
+Workers invocation logs can record both `state` and `code` from the incoming return address
+before the page clears browser history. The state only works for the signed-in starter in the original workspace.
+The code is single use, expires after one minute and requires the verifier. The verifier stays in Guard until Guard sends it directly to Track during exchange.
+Guard seals the undo token and records Track's UTC deadline (`undoUntil`). The save batch requires
+an exchanging attempt, the starter's current owner or admin membership, and no newer setup for
+the connection. It saves the source and marks the attempt saved together, clearing its verifier and undo token.
+If D1 loses the acknowledgement, the attempt records its own outcome for a day.
+
+A failed check or save claims the attempt as undoing. The daily run also claims expired exchanges
+and retries undoing attempts. It drops all rows past their undo deadline and expires local attempts without undo tokens before handling up to 25
+remaining jobs, never-tried first, then least recently tried, with the earliest deadline breaking ties.
+Guard drops a job when its issued key digest is installed on any connection at the issuing Track origin or when Track answers
+200 or `400 invalid_undo`. A paste racing the remote undo would require the issued key, which Track gives only to Guard during exchange and never shows to a person.
+A transient failure keeps the sealed token, attempt count and HTTP status when available. If the
+exchange supplied a usable token but omitted a valid deadline, Guard refuses setup and keeps
+retrying until Track gives a terminal answer. Track
+keeps a source that has received an event. Reconnecting leaves the previous source in Track.
 
 Each source key is sealed under the workspace key with the connection id as additional data. The
 daily secret rotation includes these keys. A digest prevents accidental reuse of a key between
