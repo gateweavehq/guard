@@ -1,4 +1,4 @@
-import { and, eq, isNull, or, sql } from "drizzle-orm";
+import { and, eq, exists, isNull, lte, or, type SQL, sql } from "drizzle-orm";
 import { type Database, schema } from "../db";
 import { isSealer, sealerFor } from "../secrets";
 import type { SecretsKeySettings } from "../secrets-key";
@@ -13,25 +13,35 @@ const state = sql<SignalState>`CASE WHEN ${finding.dismissedAt} IS NOT NULL THEN
  * keeps a margin for the time a call takes.
  */
 const CALLS_PER_MINUTE = 50;
+const CONNECTIONS_PER_RUN = 20;
+// D1 allows 1,000 queries per invocation, shared with the scans that run before the drain.
+const EVENTS_PER_RUN = 150;
 /** How long a connection waits after Track says it doesn't know the key. */
 const AFTER_UNKNOWN_KEY = 3_600_000;
+
+const pendingFinding = and(
+	isNull(finding.trackState),
+	sql`(${finding.sourceUnconfirmed} = 1 OR (
+		(${finding.sourceState} IS NOT NULL OR ${state} = 'open')
+		AND (${finding.sourceState} IS NOT ${state} OR ${finding.sourceSeverity} IS NOT ${finding.severity})
+		AND ${finding.sourceRejected} IS NOT (${state} || '/' || ${finding.severity})
+	))`,
+);
+
+function readySource(now: number): SQL | undefined {
+	return and(
+		eq(source.stopped, 0),
+		or(isNull(source.retryAt), lte(source.retryAt, now)),
+		or(isNull(source.leaseUntil), lte(source.leaseUntil, now)),
+	);
+}
 
 function nextFinding(db: Database, id: string) {
 	return (
 		db
 			.select()
 			.from(finding)
-			.where(
-				and(
-					eq(finding.connectionId, id),
-					isNull(finding.trackState),
-					sql`(${finding.sourceUnconfirmed} = 1 OR (
-			(${finding.sourceState} IS NOT NULL OR ${state} = 'open')
-			AND (${finding.sourceState} IS NOT ${state} OR ${finding.sourceSeverity} IS NOT ${finding.severity})
-			AND ${finding.sourceRejected} IS NOT (${state} || '/' || ${finding.severity})
-		))`,
-				),
-			)
+			.where(and(eq(finding.connectionId, id), pendingFinding))
 			// A clear or a dismissal goes first: it never adds to Track's limits and may free one, so an
 			// open Track refuses cannot hold it back. A send that failed before goes after the rest, so
 			// one event Track keeps failing cannot hold back the others.
@@ -46,30 +56,26 @@ function nextFinding(db: Database, id: string) {
 	);
 }
 
-/** Each scan or dismissal drains current observations. A lease serializes overlapping callers. */
+/** A lease serializes overlapping callers as they drain current observations. */
 export async function reportFindings(
 	db: Database,
 	settings: SecretsKeySettings,
 	id: string,
 	observedAt: number,
-) {
+	maxEvents = CALLS_PER_MINUTE,
+	onSend?: () => void,
+): Promise<number> {
 	const owner = crypto.randomUUID();
 	const now = Date.now();
 	const mine = and(eq(source.connectionId, id), eq(source.lease, owner));
 	const claim = await db
 		.update(source)
 		.set({ lease: owner, leaseUntil: now + 60_000 })
-		.where(
-			and(
-				eq(source.connectionId, id),
-				eq(source.stopped, 0),
-				or(isNull(source.retryAt), sql`${source.retryAt} <= ${now}`),
-				or(isNull(source.leaseUntil), sql`${source.leaseUntil} <= ${now}`),
-			),
-		)
+		.where(and(eq(source.connectionId, id), readySource(now)))
 		.returning()
 		.get();
-	if (!claim) return;
+	if (!claim) return 0;
+	let sent = 0;
 	try {
 		const target = await db
 			.select({ id: organization.id, slug: organization.slug, address: trackIntegration.address })
@@ -78,7 +84,7 @@ export async function reportFindings(
 			.innerJoin(trackIntegration, eq(trackIntegration.organizationId, organization.id))
 			.where(eq(connection.id, id))
 			.get();
-		if (!target) return;
+		if (!target) return 0;
 		const sealer = await sealerFor(settings, target.id);
 		let key: string;
 		try {
@@ -86,15 +92,15 @@ export async function reportFindings(
 			key = await sealer.open(sourceKeyPlace(id), claim.keySealed);
 		} catch {
 			await db.update(source).set({ lastAnswer: "unreadable", answeredAt: Date.now() }).where(mine);
-			return;
+			return 0;
 		}
 		let calls = claim.calls;
-		for (let attempts = 0; attempts < CALLS_PER_MINUTE; attempts++) {
+		for (let attempts = 0; attempts < maxEvents; attempts++) {
 			const row = await nextFinding(db, id);
-			if (!row) return;
+			if (!row) break;
 			const time = Date.now();
 			calls = calls.filter((at) => at > time - 60_000);
-			if (calls.length >= CALLS_PER_MINUTE) return;
+			if (calls.length >= CALLS_PER_MINUTE) break;
 			const current = row.dismissedAt ? "dismissed" : row.resolvedAt ? "cleared" : "open";
 			const sentAt = Math.max(
 				observedAt,
@@ -123,11 +129,15 @@ export async function reportFindings(
 					.set({ sourceUnconfirmed: 1, sourceAttemptAt: sentAt })
 					.where(sameFinding),
 			]);
-			if (!reservation.meta.changes) return;
+			if (!reservation.meta.changes) break;
 			const reply =
 				body === null
 					? { status: "too_large" as const }
 					: await postEvent(target.address, key, body);
+			if (body !== null) {
+				sent++;
+				onSend?.();
+			}
 			const answeredAt = Date.now();
 			const note: Partial<typeof source.$inferInsert> = { lastAnswer: reply.status, answeredAt };
 			let receipt: Partial<typeof finding.$inferInsert>;
@@ -164,7 +174,7 @@ export async function reportFindings(
 					note.retryAt = answeredAt + AFTER_UNKNOWN_KEY;
 				}
 				await db.update(source).set(note).where(mine);
-				return;
+				break;
 			}
 			await db.batch([
 				db.update(finding).set(receipt).where(sameFinding),
@@ -174,6 +184,36 @@ export async function reportFindings(
 	} finally {
 		await db.update(source).set({ lease: null, leaseUntil: null }).where(mine);
 	}
+	return sent;
+}
+
+export async function reportDue(db: Database, settings: SecretsKeySettings) {
+	const pending = db
+		.select({ id: finding.id })
+		.from(finding)
+		.where(and(eq(finding.connectionId, source.connectionId), pendingFinding));
+	const due = await db
+		.select({ id: source.connectionId })
+		.from(source)
+		.where(and(readySource(Date.now()), exists(pending)))
+		.orderBy(source.answeredAt, source.connectionId)
+		.limit(CONNECTIONS_PER_RUN);
+	let connections = 0;
+	let sent = 0;
+	for (const { id } of due) {
+		const remaining = EVENTS_PER_RUN - sent;
+		if (remaining <= 0) break;
+		connections++;
+		try {
+			// Count sends even if recording a receipt or releasing the lease later fails.
+			await reportFindings(db, settings, id, 0, Math.min(CALLS_PER_MINUTE, remaining), () => {
+				sent++;
+			});
+		} catch {
+			// One failed report cannot hold back another connection.
+		}
+	}
+	return { connections, sent };
 }
 
 /** A delivery failure cannot undo a recorded scan or a person's dismissal. */

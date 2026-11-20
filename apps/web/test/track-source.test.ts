@@ -323,7 +323,7 @@ describe("reporting findings to a Track source", () => {
 		);
 		await save();
 		expect(track.events.map((e) => e.severity)).toEqual(["critical"]);
-		await world.scanDue([id]);
+		await world.act(world.owner, { action: "scan", id });
 		expect(track.events.map((e) => e.severity)).toEqual(["critical", "low", "critical"]);
 	});
 

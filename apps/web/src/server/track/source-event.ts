@@ -60,7 +60,7 @@ const answerSchema = z.object({
 
 type Reply =
 	| { status: "200" | "foreign_link"; issue: { key: string; url: string } | null }
-	| { status: "429"; delay: number }
+	| { status: "429" | "503"; delay: number }
 	| { status: string; issue?: undefined; delay?: undefined };
 
 /** Track's own limits reset within a day, so a longer wait is a mistake, not a limit. */
@@ -80,15 +80,14 @@ export async function postEvent(
 			headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
 			body,
 		});
-		if (response.status === 429) {
+		if (response.status === 429 || response.status === 503) {
 			const seconds = Number(response.headers.get("Retry-After"));
-			return {
-				status: "429",
-				delay:
-					Number.isSafeInteger(seconds) && seconds > 0
-						? Math.min(seconds * 1000, LONGEST_WAIT)
-						: 60_000,
-			};
+			const delay =
+				Number.isSafeInteger(seconds) && seconds > 0
+					? Math.min(seconds * 1000, LONGEST_WAIT)
+					: undefined;
+			if (response.status === 429) return { status: "429", delay: delay ?? 60_000 };
+			if (delay !== undefined) return { status: "503", delay };
 		}
 		if (response.status !== 200) return { status: String(response.status) };
 		const answer = answerSchema.safeParse(await response.json());

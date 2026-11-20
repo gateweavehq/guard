@@ -103,10 +103,13 @@ export async function startGuard(
 		isolateSettings = [],
 		beforeClaim,
 		sourceBatch,
+		scheduledClock = false,
 	}: {
 		isolates?: number;
 		beforeClaim?: () => Promise<void>;
 		sourceBatch?: (phase: "before" | "after") => Promise<void>;
+		/** Set Date.now() to the supplied time while running a scheduled invocation. */
+		scheduledClock?: boolean;
 		hosts?: Record<string, (request: Request) => Response | Promise<Response>>;
 		/** What a branch's Preview lacks. */
 		withoutDatabase?: boolean;
@@ -157,6 +160,28 @@ export async function startGuard(
 				return results;
 			};
 		`,
+		});
+	}
+	if (scheduledClock) {
+		modules.unshift({
+			type: "ESModule",
+			path: join(serverDir, "scheduled-clock.js"),
+			contents: `
+				import worker from "./index.js";
+				export * from "./index.js";
+				export default {
+					...worker,
+					async scheduled(controller, env, ctx) {
+						const now = Date.now;
+						Date.now = () => controller.scheduledTime;
+						try {
+							return await worker.scheduled(controller, env, ctx);
+						} finally {
+							Date.now = now;
+						}
+					},
+				};
+			`,
 		});
 	}
 	const secret = randomBytes(32).toString("base64url");

@@ -374,8 +374,10 @@ and the last minute's call times hold them to 50 a minute across scans: Track al
 when they arrive, and a call takes time. Clears and dismissals go first, since they never add to
 Track's limits and may free one, so an open that Track refuses cannot hold them back. Then come
 findings whose last send did not fail, by severity, and last those whose send failed, so one event
-Track keeps failing cannot hold back the rest. Remaining findings wait for another scan or change.
-A change made while another run is finishing also waits for the next scan or change.
+Track keeps failing cannot hold back the rest. The hourly run sends unsent events and due retries
+after scanning, even when no connection is due for a scan. It takes up to 20 connections with
+pending findings and a free lease, starting with those Track has never answered, then those with
+the oldest answers.
 
 | Answer                                          | What Guard records and does                                                                                                                                                                                                                                 |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -383,7 +385,7 @@ A change made while another run is finishing also waits for the next scan or cha
 | 400                                             | Logs the finding id, skips that state and severity until they change, and clears the 404 timer, since Track read the key.                                                                                                                                   |
 | An event too large to send                      | Logs the finding id and skips that state and severity until they change, without calling Track.                                                                                                                                                             |
 | 404                                             | Remembers the first 404 since the last success and waits an hour before asking again, since each unknown key counts against Track's limit for Guard's address. A 404 at least seven days after the first stops this connection until an admin pastes a key. |
-| 429                                             | Waits until the Retry-After deadline, at most a day, and defers this connection. A new key ends the wait.                                                                                                                                                   |
+| 429 or 503 with Retry-After                     | Waits until the Retry-After deadline, at most a day, and defers this connection. A new key ends the wait.                                                                                                                                                   |
 | Network failure, invalid answer or server error | Leaves the attempt unconfirmed and retries the current observation at the next opportunity.                                                                                                                                                                 |
 
 Settings shows the latest outcome in words and its time. Guard marks an attempt unconfirmed before
