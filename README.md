@@ -10,6 +10,9 @@ list. A finding becomes a Gateweave Track issue, or a fix pull request from Gate
 
 Guard only reads. It never changes a Cloudflare setting or a repository by itself.
 
+To run Guard on your own Cloudflare account, from a fresh clone to a connected account, follow the
+[quickstart](docs/quickstart.md).
+
 Your AI assistant can ask it what is wrong: paste `https://<your-guard>/mcp` into Claude Code or any
 MCP client and sign in. See [docs/self-hosting.md](docs/self-hosting.md).
 

@@ -54,6 +54,8 @@ updates that were tested together. Delete the file unless you want them, and clo
 
 ## Deploy from the command line
 
+The [quickstart](quickstart.md) walks this path from a fresh clone to a connected Cloudflare account.
+
 Requirements: Node.js 24 (22+ works) and pnpm 12.
 
 ```sh
