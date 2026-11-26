@@ -14,7 +14,7 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
 - A Cloudflare account on the Workers Paid plan. The Free plan gives a request too little CPU for a
   password sign-in; [self-hosting.md](self-hosting.md) has the details.
 - [Git](https://git-scm.com/downloads).
-- [Node.js](https://nodejs.org) 24 (22 and later work) and [pnpm](https://pnpm.io/installation) 12.
+- [Node.js](https://nodejs.org) 24, the version in `.node-version`, and [pnpm](https://pnpm.io/installation) 12.
 - A browser, for signing in to Cloudflare and for Guard itself.
 
 ## Steps
@@ -78,7 +78,11 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
 
    </details>
 
-4. Deploy.
+4. Deploy. If your Cloudflare login can reach more than one account, first run
+   `pnpm wrangler whoami` to see them with their ids, then set `CLOUDFLARE_ACCOUNT_ID` to the one to
+   deploy to: `export CLOUDFLARE_ACCOUNT_ID=<id>` in a POSIX shell, `$env:CLOUDFLARE_ACCOUNT_ID="<id>"`
+   in PowerShell. The deploy runs some Wrangler commands with their output captured, and there
+   Wrangler cannot ask which account to use, so it stops.
 
    ```sh
    pnpm run deploy
@@ -195,7 +199,7 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
 
    </details>
 
-7. Open the address from step 4 in your browser. It opens on **Sign in to Gateweave Guard**; choose
+7. Open the address from step 4 in your browser. Guard sends you on to `/login`, titled **Sign in to Gateweave Guard**; choose
    **Create an account**, enter a name, an email address and a password of at least 8 characters,
    then choose **Create account**. Guard sends no email and asks for no confirmation, so any
    address will do.
@@ -207,7 +211,8 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
    <details>
    <summary>Expected output</summary>
 
-   You are signed in at once, and the page that opens is titled **Workspaces**, with "Signed in as"
+   You are signed in at once and taken back to the address itself, `/`. The page is titled
+   **Workspaces**, with "Signed in as"
    and your address under it and "You are not in any workspace yet." below.
 
    </details>
@@ -218,7 +223,7 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
    <details>
    <summary>Expected output</summary>
 
-   The workspace opens on its own address, `/acme/findings`, titled **Findings**, with "No findings
+   The workspace opens at `/acme`, which sends you on to `/acme/findings`, titled **Findings**, with "No findings
    yet." and "Connect a Cloudflare account or a GitHub repository to start." under it, and a
    **Connections** button. The sidebar lists Findings, Protection, Traffic, Connections, Settings
    and Server.
@@ -249,6 +254,7 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
     Set the account resources to your account, and the zone resources to all zones from that
     account. Create the token and copy it: Cloudflare shows it once. Also copy your account id,
     32 characters, which is in the dashboard's address and at the foot of an account's overview.
+    `pnpm wrangler whoami` lists your accounts with their ids too.
 
     Without the second permission Cloudflare leaves out every insight about the account's domains,
     and without the third Guard cannot count what the WAF and bots did to each zone (the Traffic
