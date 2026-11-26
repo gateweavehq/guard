@@ -161,8 +161,8 @@ assistants you allowed, each with a Take back button that ends its access at onc
 The assistant acts as the person who allowed it, in every workspace they belong to, and can do what
 the Findings and Traffic pages let that person do: read findings, and for an owner or admin dismiss
 one and start a scan. What it reads goes to the assistant, so connect only ones you trust. It never
-sees a connection's token. There are no keys for jobs with no browser yet. See "MCP" in
-[architecture.md](architecture.md).
+sees a connection's token. There are no keys for jobs with no browser yet. The tools and what each
+needs are in [mcp.md](mcp.md); for how it is built, see "MCP" in [architecture.md](architecture.md).
 
 ### Connections and SECRETS_KEY
 
