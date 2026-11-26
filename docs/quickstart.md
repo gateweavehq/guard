@@ -97,7 +97,10 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
    The Worker and the database are both called `gateweave-guard`, from `name` and `database_name`
    at the top of `wrangler.jsonc`. To use other names, change those two before this step. The
    Worker's name is also the first part of its address. Leave the ones under `env`: they are
-   Gateweave's own deployments.
+   Gateweave's own deployments. If your account already has a Worker or a D1 database under those
+   names, the deploy does not make new ones: it applies the migrations to that database and deploys
+   over that Worker, keeping the secrets it already has. To keep a new Guard apart from them,
+   choose other names first.
 
    <details>
    <summary>Expected output</summary>
