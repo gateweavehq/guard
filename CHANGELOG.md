@@ -15,9 +15,10 @@ versions. There is no migration in this release.
 
 ### Added
 
-- **An MCP reference page.** [docs/mcp.md](docs/mcp.md) covers the server at `/mcp`: its address,
-  how an assistant signs in, how to set up a client, and a table of the tools, which a test checks
-  against the server so the two cannot drift apart.
+- **An MCP reference page.**
+  [docs/mcp.md](https://github.com/gateweavehq/guard/blob/main/docs/mcp.md) covers the server at
+  `/mcp`: its address, how an assistant signs in, how to set up a client, and a table of the tools,
+  which a test checks against the server so the two cannot drift apart.
   ([#47](https://github.com/gateweavehq/guard/pull/47))
 
 ### Changed
@@ -25,8 +26,9 @@ versions. There is no migration in this release.
 - **Runtime dependencies moved.** These are the packages in the Worker's `dependencies` that
   changed, and the ones to read the release notes of if you run your own copy
   ([#45](https://github.com/gateweavehq/guard/pull/45)):
-  - `better-auth`, `@better-auth/core`, `@better-auth/mcp` and `@better-auth/oauth-provider`:
-    1.7.25 to 1.7.27. The `better-call` package they bring moved from 1.4.5 to 1.4.6.
+  - `better-auth`, `@better-auth/core`, `@better-auth/drizzle-adapter`, `@better-auth/mcp` and
+    `@better-auth/oauth-provider`: 1.7.25 to 1.7.27. The `better-call` package they bring moved
+    from 1.4.5 to 1.4.6.
   - `@tanstack/react-start`: 1.169.5 to 1.169.7
   - `jose`: 6.2.17 to 6.2.18
   - `lucide-react`: 1.71.0 to 1.77.0
@@ -39,9 +41,9 @@ versions. There is no migration in this release.
   (`@tanstack/devtools-vite` 0.8.6 to 0.8.7, `@tanstack/react-devtools` 0.10.14 to 0.10.15,
   `@tanstack/react-router-devtools` 1.167.3 to 1.167.4).
 - **The Track guide recommends "close when cleared".** Guard's Track settings page and
-  [docs/self-hosting.md](docs/self-hosting.md) now say to turn it on for a pasted source key, as
-  Connect Track does: Guard clears a finding only after a complete scan, and Track completes only
-  an issue nobody has started.
+  [docs/self-hosting.md](https://github.com/gateweavehq/guard/blob/main/docs/self-hosting.md) now
+  say to turn it on for a pasted source key, as Connect Track does: Guard clears a finding only
+  after a complete scan, and Track completes only an issue nobody has started.
   ([6345bb7](https://github.com/gateweavehq/guard/commit/6345bb7))
 - **The contributing guide links the community rules.** `CONTRIBUTING.md` has a "Contributing with
   agents" section that links the [community rules](https://docs.gateweave.com/community-rules/):
