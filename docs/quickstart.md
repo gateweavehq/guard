@@ -1,13 +1,16 @@
 # Quickstart
 
-About N minutes from a fresh clone gets you Guard on your own Cloudflare account, at a workers.dev
-address, deployed from the command line, with `SECRETS_KEY` set and you signed in as its first
-account. A few minutes more connects your Cloudflare account with a read-only token you make, and
-Guard shows what it found.
+Following this page on 26 November 2026 took about 3 minutes, from a fresh clone to a signed-in
+first account with a workspace, on the Connections page and ready to connect a Cloudflare account.
+It started from an empty package cache. It did not count installing the tools below or signing in
+to Cloudflare.
+
+Step 3 and steps 10 to 12 were not timed. Step 3 opens your browser to sign in to your own
+Cloudflare account. Steps 10 to 12 need a token that you make in your own Cloudflare account. The
+timed run set a token in the environment in place of step 3.
 
 This is the shortest path: no custom domain, no sign-in provider and no email. The rest is in
-[self-hosting.md](self-hosting.md). The time counts the steps before you make the token, because
-that happens in the Cloudflare dashboard and the token is yours; the last two steps are not timed.
+[self-hosting.md](self-hosting.md).
 
 ## What you need
 
@@ -31,6 +34,7 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
 
    ```text
    Cloning into 'guard'...
+   ...
    ```
 
    </details>
@@ -45,18 +49,36 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
    <summary>Expected output</summary>
 
    ```text
-   Packages: +371
+   Scope: all … workspace projects
+   ✓ Lockfile passes supply-chain policies (verified … ago)
+   Lockfile is up to date, resolution step is skipped
+   Packages are hard linked from the content-addressable store to the virtual store.
+     Content-addressable store is at: …
+     Virtual store is at:             node_modules/.pnpm
+   Downloading @cloudflare/workerd-…: 0.00 B/… MB
+   ...
+   Progress: resolved …, reused 0, downloaded …, added …
+   ...
+   Packages: +…
    ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-   Progress: resolved 371, reused 0, downloaded 371, added 371, done
+   Progress: resolved …, reused 0, downloaded …, added …, done
+   .../esbuild@…/node_modules/esbuild postinstall$ node install.js
+   .../node_modules/workerd postinstall$ node install.js
+   ...
+   .../node_modules/workerd postinstall: Done
+   ...
 
    devDependencies:
-   + @biomejs/biome 2.6.8
-   + typescript 7.0.2
+   + @biomejs/biome …
+   + typescript …
 
-   Done in 40s using pnpm v12.4.2
+   Done in …s using pnpm v…
    ```
 
-   The counts and the time differ a little from release to release and from machine to machine.
+   With an empty package cache, as in the timed run, pnpm downloads every package, so you see the
+   lockfile lines, the `Downloading` and `Progress` lines and the `postinstall` lines. With a full
+   cache, most of them are not there. The counts, the versions, the paths and the time differ from
+   release to release and from machine to machine. The timed run took about 17 seconds.
 
    </details>
 
@@ -71,10 +93,15 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
    <summary>Expected output</summary>
 
    ```text
+    ⛅️ wrangler … (update available …)
+   ───────────────────────────────────────────────
    Attempting to login via OAuth...
    Opening a link in your default browser: https://dash.cloudflare.com/oauth2/auth?...
    Successfully logged in.
    ```
+
+   The first line is Wrangler's banner, which every Wrangler command prints. It says "update
+   available" when a newer Wrangler exists. You can ignore that: Guard pins the one it uses.
 
    </details>
 
@@ -91,28 +118,57 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
    Nothing needs setting first. The deploy builds Guard, creates the database and the Durable
    Object class, makes the secret that signs sessions (`BETTER_AUTH_SECRET`) and never shows it,
    and then applies the database migrations. If your account has no workers.dev subdomain yet,
-   Wrangler offers to register one: say yes. Before it applies the migrations, Wrangler asks "Your
-   database may not be available to serve requests during the migration, continue?": answer yes.
+   Wrangler asks "Would you like to register a workers.dev subdomain now?": say yes. After the
+   deploy, before it applies the migrations, Wrangler asks "Your database may not be available to
+   serve requests during the migration, continue?": answer yes. If the deploy stops with an error,
+   act on what the message says.
 
    The Worker and the database are both called `gateweave-guard`, from `name` and `database_name`
    at the top of `wrangler.jsonc`. To use other names, change those two before this step. The
    Worker's name is also the first part of its address. Leave the ones under `env`: they are
-   Gateweave's own deployments. If your account already has a Worker or a D1 database under those
-   names, the deploy does not make new ones: it applies the migrations to that database and deploys
-   over that Worker, keeping the secrets it already has. To keep a new Guard apart from them,
-   choose other names first.
+   Gateweave's own deployments.
+
+   If the account already has a Worker under the Worker's name, the deploy does not make a new one,
+   and what happens depends on that Worker's secrets. If it has a `BETTER_AUTH_SECRET`, as an
+   earlier Guard of yours does, the deploy applies these migrations to a database of that name,
+   replaces the Worker's code and keeps its secrets, `BETTER_AUTH_SECRET` and `SECRETS_KEY`
+   included. If it has none, the deploy fails with "The following required secrets have not been
+   set: BETTER_AUTH_SECRET", but by then it has made the database, or applied these migrations to a
+   database of that name that was already there. Either way, choose names nothing uses, unless you
+   mean to update a Guard you already run.
 
    <details>
    <summary>Expected output</summary>
 
    ```text
-   vite v8.3.8 building client environment for production...
-   ✓ built in 18s
-   vite v8.3.8 building ssr environment for production...
-   ▲ [WARNING] Missing required secrets: BETTER_AUTH_SECRET. Add them to .dev.vars, .env, or set as environment variables.
-   ✓ built in 6s
+   $ pnpm --filter @gateweave/guard-web run deploy
+   $ node scripts/deploy.mjs
+   (!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, …
+     - import "./scripts/dev-secrets" without a file extension (vite.config.ts:…). Add the file extension
+   Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
    ...
-   Total Upload: 4540.59 KiB / gzip: 1052.34 KiB
+   vite v… building client environment for production...
+   ...
+   ✓ … modules transformed.
+   ...
+   ✓ built in …
+   vite v… building ssr environment for production...
+   ...
+   ▲ [WARNING] Missing required secrets: BETTER_AUTH_SECRET. Add them to .dev.vars, .env, or set as environment variables.
+   ...
+   ✓ built in …
+    ⛅️ wrangler … (update available …)
+   ───────────────────────────────────────────────
+   Using redirected Wrangler configuration.
+   ...
+   Attaching additional modules:
+   ┌──────────────────────┬──────┬──────────┐
+   │ Name                 │ Type │ Size     │
+   ...
+   Uploaded … of … assets
+   ✨ Success! Uploaded … files (… sec)
+
+   Total Upload: … KiB / gzip: … KiB
    The following bindings need to be provisioned:
    Binding        Resource
    env.DB         D1 Database
@@ -124,47 +180,67 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
    🎉 Resources provisioned, continuing with deployment...
    Durable Object exports reconciliation:
      Created: RateLimiter
-   Worker Startup Time: 68 ms
+   Worker Startup Time: … ms
    Your Worker has access to the following bindings:
    Binding                                    Resource
    env.RATE_LIMITER (RateLimiter)             Durable Object
    env.EMAIL (unrestricted)                   Send Email
    env.DB (gateweave-guard)                   D1 Database
    env.BETTER_AUTH_SECRET ("(hidden)")        Environment Variable
-   Uploaded gateweave-guard (14.84 sec)
-   Deployed gateweave-guard triggers (2.44 sec)
+   Uploaded gateweave-guard (… sec)
+   Deployed gateweave-guard triggers (… sec)
      https://gateweave-guard.<your-subdomain>.workers.dev
      schedule: 29 3 * * *
      schedule: 0 * * * *
-   Current Version ID: 01f37d43-a8a9-4537-9638-ed4a5d75bcf4
-    ⛅️ wrangler 4.166.0
+   Current Version ID: …
+    ⛅️ wrangler … (update available …)
    ───────────────────────────────────────────────
    Resource location: remote
    Migrations to be applied:
+   ┌─────────────────────────┐
+   │ name                    │
+   ├─────────────────────────┤
+   │ 0000_init.sql           │
+   ...
+   │ 0011_track_connect.sql  │
+   └─────────────────────────┘
    ? About to apply 12 migration(s)
    Your database may not be available to serve requests during the migration, continue? › yes
+   🌀 Executing on remote database DB (…):
    ...
    │ 0011_track_connect.sql  │ ✅     │
+   └─────────────────────────┴────────┘
    ```
 
-   The build also prints a Vite note about its config loader; it can be ignored. So can the
-   warning about `BETTER_AUTH_SECRET`: the deploy makes that secret right after the build. The
-   address on the line after `Deployed` is yours. The migration table lists every migration with a
-   tick; the last one is shown above. Versions, sizes and times differ. A deploy takes a minute or
-   two.
+   The Vite note about its config loader can appear more than once, and the build can print timing
+   notes. All of it can be ignored. So can the warning about `BETTER_AUTH_SECRET`: the deploy makes
+   that secret right after the build. The module table before `Total Upload` is long. The address
+   is in the middle of the log, on the line after `Deployed … triggers`, and it is yours: the
+   migrations come after it. Wrangler lists them, asks the question, and you answer yes. It then
+   prints the migration table again as each one is applied, with a clock in place of a tick for
+   those still waiting; the last table has a tick on every row. The number of migrations grows
+   with releases. Versions, sizes and times differ. The timed run took about 72 seconds.
 
    </details>
 
-5. Make the key that seals tokens. `SECRETS_KEY` is 32 random bytes in base64, and this prints one.
+5. Make the key that seals tokens. If this server already has a `SECRETS_KEY`, keep it and skip
+   steps 5 and 6: a new key does not open the tokens sealed under the old one. This is the case
+   when the deploy updated a Guard you already run. `pnpm wrangler secret list` shows which secrets
+   the Worker has. To change the key on purpose, see "Changing it" in
+   [Connections and SECRETS_KEY](self-hosting.md#connections-and-secrets_key).
+
+   `SECRETS_KEY` is 32 random bytes in base64, and this prints one.
 
    ```sh
    node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
    ```
 
    Copy the line into your password manager now, before you go on. Guard seals every token you
-   connect under this key and keeps it nowhere else. Without it Guard cannot open the tokens it
-   stored: each connection then says it needs attention, and an admin has to give it a new token.
-   Nobody else needs to see it.
+   connect under this key and keeps it nowhere else. Each sealed token carries the id of the key
+   that sealed it, and Guard opens it only with that key (`SECRETS_KEY`, or `SECRETS_KEY_PREVIOUS`
+   while a key is being changed). Without the key Guard cannot open the tokens it stored: each
+   connection then says it needs attention, and an admin has to give it a new token. Nobody else
+   needs to see it.
 
    <details>
    <summary>Expected output</summary>
@@ -178,7 +254,7 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
    </details>
 
 6. Give the key to the Worker. Wrangler asks for the value; paste the line from the last step. What
-   you type is not shown.
+   you type is not shown. If the Worker already has a `SECRETS_KEY`, this replaces it: see step 5.
 
    ```sh
    pnpm wrangler secret put SECRETS_KEY
@@ -190,6 +266,9 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
    <summary>Expected output</summary>
 
    ```text
+   $ pnpm --filter @gateweave/guard-web exec wrangler --cwd ../.. "secret" "put" "SECRETS_KEY"
+    ⛅️ wrangler … (update available …)
+   ───────────────────────────────────────────────
    ▲ [WARNING] Multiple environments are defined in the Wrangler configuration file, but no target environment was specified for the secret put command.
    ...
    ? Enter a secret value: ›
@@ -198,14 +277,14 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
    ```
 
    The warning can be ignored: the environments it means are Gateweave's own, and the key goes to
-   the Worker you deployed.
+   the Worker you deployed. The timed run took about 4 seconds.
 
    </details>
 
-7. Open the address from step 4 in your browser. Guard sends you on to `/login`, titled **Sign in to Gateweave Guard**; choose
-   **Create an account**, enter a name, an email address and a password of at least 8 characters,
-   then choose **Create account**. Guard sends no email and asks for no confirmation, so any
-   address will do.
+7. Open the address from step 4 in your browser. Guard sends you on to `/login`, headed **Sign in
+   to Gateweave Guard**; choose **Create an account**, enter a name, an email address and a
+   password of at least 8 characters, then choose **Create account**. Guard sends no email and
+   asks for no confirmation, so any address will do.
 
    This server is open until you change it: anyone who reaches the address can make an account, and
    the first one, yours, owns the deployment. Do this step before you share the address. To let in
@@ -214,9 +293,11 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
    <details>
    <summary>Expected output</summary>
 
-   You are signed in at once and taken back to the address itself, `/`. The page is titled
-   **Workspaces**, with "Signed in as"
-   and your address under it and "You are not in any workspace yet." below.
+   The login page reads "Sign in to Gateweave Guard", with **Email**, **Password**, **Sign in** and
+   "New to Gateweave Guard?" beside **Create an account**. After you create the account you are
+   signed in at once and taken back to the address itself, `/`. The page is headed **Workspaces**,
+   with "Signed in as" and your address under it, **Your account** and **Sign out**, and "You are
+   not in any workspace yet." above a **New workspace** form with **Name** and **URL**.
 
    </details>
 
@@ -226,10 +307,9 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
    <details>
    <summary>Expected output</summary>
 
-   The workspace opens at `/acme`, which sends you on to `/acme/findings`, titled **Findings**, with "No findings
-   yet." and "Connect a Cloudflare account or a GitHub repository to start." under it, and a
-   **Connections** button. The sidebar lists Findings, Protection, Traffic, Connections, Settings
-   and Server.
+   The workspace opens at `/acme/findings`, headed **Findings**, with "No findings yet." and
+   "Connect a Cloudflare account or a GitHub repository to start." under it, and a **Connections**
+   button. The sidebar lists Findings, Protection, Traffic, Connections, Settings and Server.
 
    </details>
 
@@ -238,10 +318,12 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
    <details>
    <summary>Expected output</summary>
 
-   The page is titled **Connections**, says "Nothing connected yet." and offers **Connect a
-   Cloudflare account** and **Connect a GitHub repository**. If it says instead "This server is not
-   set up to keep tokens, so nothing can be connected.", Guard does not have `SECRETS_KEY` yet: go
-   back to step 6.
+   The page, at `/acme/connections`, is headed **Connections**. It says "Nothing connected yet."
+   and "Connect a Cloudflare account or a GitHub repository, and Guard starts reading.", and offers
+   **Connect a Cloudflare account** and **Connect a GitHub repository**. If it says instead "This
+   server is not set up to keep tokens, so nothing can be connected.", act on what it says: Guard
+   has no usable `SECRETS_KEY`. It is missing, or it is shorter than 32 bytes. Do steps 5 and 6
+   again, and paste the whole line that step 5 prints.
 
    </details>
 
@@ -285,7 +367,7 @@ that happens in the Cloudflare dashboard and the token is yours; the last two st
     unless you gave one), "Cloudflare account", the account id and "Token …" with the token's last
     four characters. Under it, "The last scan went well.", the time of the last and next scan, and
     a link such as "0 open findings". If Cloudflare refuses the token, the form says in a sentence
-    what is wrong, such as which permissions it needs, and keeps nothing.
+    what is wrong, such as which permissions it needs, and keeps nothing: act on what it says.
 
     </details>
 
