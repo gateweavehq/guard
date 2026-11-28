@@ -105,37 +105,34 @@ This is the shortest path: no custom domain, no sign-in provider and no email. T
 
    </details>
 
-4. Deploy. If your Cloudflare login can reach more than one account, first run
+4. Choose names for a fresh deployment, then deploy. If your Cloudflare login can reach more than
+   one account, first run
    `pnpm wrangler whoami` to see them with their ids, then set `CLOUDFLARE_ACCOUNT_ID` to the one to
    deploy to: `export CLOUDFLARE_ACCOUNT_ID=<id>` in a POSIX shell, `$env:CLOUDFLARE_ACCOUNT_ID="<id>"`
    in PowerShell. The deploy runs some Wrangler commands with their output captured, and there
    Wrangler cannot ask which account to use, so it stops.
 
+   **Choose an unused Worker name and an unused D1 database name in the selected account.** The
+   defaults are both `gateweave-guard`. To change them, edit `name` and `database_name` at the top
+   of `wrangler.jsonc`. The Worker's name is also the first part of its address. Leave the names
+   under `env` for Gateweave's own deployments.
+
+   If the database selected by the configuration already exists, the deploy applies Guard's
+   migrations to it before checking whether the Worker exists. An existing Worker with a
+   `BETTER_AUTH_SECRET` can have its code replaced while keeping its secrets. To upgrade a
+   Guard you already run, see [Updating](self-hosting.md#updating).
+
    ```sh
    pnpm run deploy
    ```
 
-   Nothing needs setting first. The deploy builds Guard, creates the database and the Durable
+   With fresh names, the deploy builds Guard, creates the database and the Durable
    Object class, makes the secret that signs sessions (`BETTER_AUTH_SECRET`) and never shows it,
    and then applies the database migrations. If your account has no workers.dev subdomain yet,
    Wrangler asks "Would you like to register a workers.dev subdomain now?": say yes. After the
    deploy, before it applies the migrations, Wrangler asks "Your database may not be available to
    serve requests during the migration, continue?": answer yes. If the deploy stops with an error,
    act on what the message says.
-
-   The Worker and the database are both called `gateweave-guard`, from `name` and `database_name`
-   at the top of `wrangler.jsonc`. To use other names, change those two before this step. The
-   Worker's name is also the first part of its address. Leave the ones under `env`: they are
-   Gateweave's own deployments.
-
-   If the account already has a Worker under the Worker's name, the deploy does not make a new one,
-   and what happens depends on that Worker's secrets. If it has a `BETTER_AUTH_SECRET`, as an
-   earlier Guard of yours does, the deploy applies these migrations to a database of that name,
-   replaces the Worker's code and keeps its secrets, `BETTER_AUTH_SECRET` and `SECRETS_KEY`
-   included. If it has none, the deploy fails with "The following required secrets have not been
-   set: BETTER_AUTH_SECRET", but by then it has made the database, or applied these migrations to a
-   database of that name that was already there. Either way, choose names nothing uses, unless you
-   mean to update a Guard you already run.
 
    <details>
    <summary>Expected output</summary>
@@ -223,10 +220,11 @@ This is the shortest path: no custom domain, no sign-in provider and no email. T
 
    </details>
 
-5. Make the key that seals tokens. If this server already has a `SECRETS_KEY`, keep it and skip
-   steps 5 and 6: a new key does not open the tokens sealed under the old one. This is the case
-   when the deploy updated a Guard you already run. `pnpm wrangler secret list` shows which secrets
-   the Worker has. To change the key on purpose, see "Changing it" in
+5. Check the key that seals tokens. If Guard already has a working `SECRETS_KEY`, keep it and
+   skip steps 5 and 6. If a deployment with existing connections has a missing or invalid key,
+   restore the original value from backup using the command in step 6. When the connections list
+   is empty and the key is missing or invalid, follow steps 5 and 6 to set a new key.
+   `pnpm wrangler secret list` shows which secrets the Worker has. To rotate a key, see "Changing it" in
    [Connections and SECRETS_KEY](self-hosting.md#connections-and-secrets_key).
 
    `SECRETS_KEY` is 32 random bytes in base64, and this prints one.
@@ -253,8 +251,8 @@ This is the shortest path: no custom domain, no sign-in provider and no email. T
 
    </details>
 
-6. Give the key to the Worker. Wrangler asks for the value; paste the line from the last step. What
-   you type is not shown. If the Worker already has a `SECRETS_KEY`, this replaces it: see step 5.
+6. Give the new or restored key to the Worker. Wrangler asks for the value and hides what you type.
+   This command replaces a key already stored on the Worker, so check the value against step 5.
 
    ```sh
    pnpm wrangler secret put SECRETS_KEY
@@ -322,8 +320,9 @@ This is the shortest path: no custom domain, no sign-in provider and no email. T
    and "Connect a Cloudflare account or a GitHub repository, and Guard starts reading.", and offers
    **Connect a Cloudflare account** and **Connect a GitHub repository**. If it says instead "This
    server is not set up to keep tokens, so nothing can be connected.", act on what it says: Guard
-   has no usable `SECRETS_KEY`. It is missing, or it is shorter than 32 bytes. Do steps 5 and 6
-   again, and paste the whole line that step 5 prints.
+   has no usable `SECRETS_KEY`. It is missing, or it is shorter than 32 bytes. If the deployment
+   already has connections, restore its original key from backup. If the connections list is
+   empty, follow steps 5 and 6 and paste the whole line that step 5 prints.
 
    </details>
 
@@ -365,9 +364,10 @@ This is the shortest path: no custom domain, no sign-in provider and no email. T
 
     A message says "Connected." and the connection appears in the list: its name (the account id,
     unless you gave one), "Cloudflare account", the account id and "Token …" with the token's last
-    four characters. Under it, "The last scan went well.", the time of the last and next scan, and
-    a link such as "0 open findings". If Cloudflare refuses the token, the form says in a sentence
-    what is wrong, such as which permissions it needs, and keeps nothing: act on what it says.
+    four characters. When the first scan succeeds, the row says "The last scan went well." and
+    shows the last and next scan times and a link such as "0 open findings". If that scan fails,
+    read its status in the connection row. If Cloudflare refuses the token during the connection
+    check, the form says what is wrong, such as which permissions it needs, and keeps nothing.
 
     </details>
 
