@@ -8,6 +8,59 @@ read its entry before updating a self-hosted copy.
 Each version's [GitHub release](https://github.com/gateweavehq/guard/releases) carries the same
 notes. Publishing a release deploys it.
 
+## [0.6.2] - 2026-11-27
+
+Guard now has an MCP reference page, and its runtime dependencies moved to newer patch and minor
+versions. There is no migration in this release.
+
+### Added
+
+- **An MCP reference page.**
+  [docs/mcp.md](https://github.com/gateweavehq/guard/blob/main/docs/mcp.md) covers the server at
+  `/mcp`: its address, how an assistant signs in, how to set up a client, and a table of the tools,
+  which a test checks against the server so the two cannot drift apart.
+  ([#47](https://github.com/gateweavehq/guard/pull/47))
+
+### Changed
+
+- **Runtime dependencies moved.** These are the packages in the Worker's `dependencies` that
+  changed, and the ones to read the release notes of if you run your own copy
+  ([#45](https://github.com/gateweavehq/guard/pull/45)):
+  - `better-auth`, `@better-auth/core`, `@better-auth/drizzle-adapter`, `@better-auth/mcp` and
+    `@better-auth/oauth-provider`: 1.7.25 to 1.7.27. The `better-call` package they bring moved
+    from 1.4.5 to 1.4.6.
+  - `@tanstack/react-start`: 1.169.5 to 1.169.7
+  - `jose`: 6.2.17 to 6.2.18
+  - `lucide-react`: 1.71.0 to 1.77.0
+  - `tailwind-merge`: 3.7.0 to 3.7.1
+
+  The change touches no migration, and the generated Better Auth schema is the same.
+- **Development tooling moved too,** which affects building and testing but not what runs: Wrangler
+  4.160.0 to 4.166.0, Vite 8.3.7 to 8.3.8, Vitest 5.1.0 to 5.1.1, `@cloudflare/vite-plugin`
+  1.68.0 to 1.70.1, Biome 2.6.6 to 2.6.8, and the TanStack devtools packages
+  (`@tanstack/devtools-vite` 0.8.6 to 0.8.7, `@tanstack/react-devtools` 0.10.14 to 0.10.15,
+  `@tanstack/react-router-devtools` 1.167.3 to 1.167.4).
+- **The Track guide recommends "close when cleared".** Guard's Track settings page and
+  [docs/self-hosting.md](https://github.com/gateweavehq/guard/blob/main/docs/self-hosting.md) now
+  say to turn it on for a pasted source key, as Connect Track does: Guard clears a finding only
+  after a complete scan, and Track completes only an issue nobody has started.
+  ([6345bb7](https://github.com/gateweavehq/guard/commit/6345bb7))
+- **The contributing guide links the community rules.** `CONTRIBUTING.md` has a "Contributing with
+  agents" section that links the [community rules](https://docs.gateweave.com/community-rules/):
+  claim an issue before working on it, and the person who opens a pull request answers for it. The
+  pull request template asks which agent helped, for disclosure only.
+  ([#46](https://github.com/gateweavehq/guard/pull/46))
+
+### If you run your own
+
+- No migration, variable or secret. Deploy as usual, with `pnpm install` first so the new
+  dependency versions are installed.
+- The dependency updates in [#45](https://github.com/gateweavehq/guard/pull/45) change no setting
+  you made. Nothing in the diff adds or renames a binding, a variable or a secret.
+- [#49](https://github.com/gateweavehq/guard/pull/49) makes Gateweave's own CI read the Cloudflare
+  account id from a secret instead of a variable. It changes only that workflow, so a self-hosted
+  copy needs nothing for it.
+
 ## [0.6.1] - 2026-11-20
 
 Reporting to Track no longer waits a day for what it could not send at once. There is no
