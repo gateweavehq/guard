@@ -297,7 +297,7 @@ their findings and traffic, and do what their role lets them on the pages.
 - The migration `0009_mcp_oauth.sql` adds the tables of the OAuth plugins; `pnpm run deploy`
   applies it.
 - `/mcp` is on only when `BETTER_AUTH_URL` is set to the address people open Guard at. See
-  [docs/self-hosting.md](docs/self-hosting.md).
+  [docs/self-hosting.md](https://github.com/gateweavehq/guard/blob/main/docs/self-hosting.md).
 
 ## [0.1.0] - 2026-11-14
 
@@ -337,6 +337,6 @@ turns a finding into an issue in Gateweave Track. It never changes a setting, a 
 
 ### If you run your own
 
-- See [docs/self-hosting.md](docs/self-hosting.md): it needs Workers Paid, a D1 database and, to
+- See [docs/self-hosting.md](https://github.com/gateweavehq/guard/blob/main/docs/self-hosting.md): it needs Workers Paid, a D1 database and, to
   connect anything, `SECRETS_KEY`. Keep a copy of `SECRETS_KEY` outside Cloudflare: without it, the
   tokens in the database and its backups cannot be opened.
